@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+  <!-- maskable: artwork kept inside the 80% safe zone, full-bleed background -->
+  <rect width="240" height="240" fill="#F7EDE2"/>
+  <g transform="translate(24 24) scale(0.8)">
+    <g stroke="#563E79" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M120 200 L120 150" fill="none"/>
+      <path d="M120 172 C100 168 88 156 86 140 C102 144 114 154 120 172 Z" fill="#84A59D"/>
+      <circle cx="120" cy="92" r="18" fill="#FFCE80"/>
+      <circle cx="120" cy="56" r="17" fill="#F28482"/>
+      <circle cx="151" cy="72" r="17" fill="#F28482"/>
+      <circle cx="151" cy="112" r="17" fill="#F28482"/>
+      <circle cx="120" cy="128" r="17" fill="#F28482"/>
+      <circle cx="89" cy="112" r="17" fill="#F28482"/>
+      <circle cx="89" cy="72" r="17" fill="#F28482"/>
+    </g>
+    <circle cx="113" cy="88" r="4" fill="#563E79"/>
+    <circle cx="127" cy="88" r="4" fill="#563E79"/>
+    <path d="M113 99 Q120 105 127 99" stroke="#563E79" stroke-width="4" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>

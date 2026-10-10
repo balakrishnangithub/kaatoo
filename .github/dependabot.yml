@@ -1,0 +1,23 @@
+# Dependency updates — small, grouped, weekly so PRs stay reviewable.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      react:
+        patterns: ['react', 'react-dom', '@types/react', '@types/react-dom', 'react-router']
+      vite:
+        patterns: ['vite', '@vitejs/*']
+      lint:
+        patterns: ['eslint*', '@eslint/*', 'typescript-eslint*', 'prettier']
+      test:
+        patterns: ['vitest', 'jsdom', '@testing-library/*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
