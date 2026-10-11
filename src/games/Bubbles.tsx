@@ -37,6 +37,9 @@ export default function Bubbles({ onHome }: { onHome: () => void }) {
   const [done, setDone] = useState(false);
   const idRef = useRef(0);
   const spawnedRef = useRef(0);
+  const liveRef = useRef(0); // bubbles currently on screen — spawn cap source of truth
+  const roundRef = useRef(0); // increments on restart — stale closures die with their round
+  const timersRef = useRef<number[]>([]); // every timeout we arm, so restart can disarm all
   const resolvedIds = useRef<Set<number>>(new Set());
   const poppedCount = useRef(0);
   const layerRef = useRef<HTMLDivElement>(null);
@@ -76,10 +79,23 @@ export default function Bubbles({ onHome }: { onHome: () => void }) {
     return { ...base, tint: '#ffffff', num: n.n, label: n.ta };
   }
 
-  /** Every bubble resolves exactly once — popped or escaped — so the round ALWAYS ends. */
-  const resolve = (id: number, popped: boolean, label?: string) => {
+  /** Every timeout goes through here so restart() can disarm the whole round. */
+  const later = (fn: () => void, ms: number) => {
+    const t = window.setTimeout(fn, ms);
+    timersRef.current.push(t);
+  };
+  const disarmAll = () => {
+    for (const t of timersRef.current) window.clearTimeout(t);
+    timersRef.current = [];
+  };
+
+  /** Every bubble resolves exactly once — popped or escaped — so the round ALWAYS ends.
+   *  Round-tagged: a timer/animation from a previous round is dead on arrival. */
+  const resolve = (id: number, popped: boolean, label: string | undefined, round: number) => {
+    if (round !== roundRef.current) return; // ghost from a finished round
     if (resolvedIds.current.has(id)) return; // dedupe: drift may end during pop-shrink
     resolvedIds.current.add(id);
+    liveRef.current -= 1;
 
     if (popped && label) {
       chimePop();
@@ -88,7 +104,7 @@ export default function Bubbles({ onHome }: { onHome: () => void }) {
       // popped bubbles stop intercepting touches instantly and leave fast,
       // so a fresh bubble behind them is tappable right away
       setBubbles((bs) => bs.map((b) => (b.id === id ? { ...b, popped: true } : b)));
-      window.setTimeout(() => setBubbles((bs) => bs.filter((b) => b.id !== id)), 130);
+      later(() => setBubbles((bs) => bs.filter((b) => b.id !== id)), 130);
     } else {
       setBubbles((bs) => bs.filter((b) => b.id !== id));
     }
@@ -98,20 +114,24 @@ export default function Bubbles({ onHome }: { onHome: () => void }) {
     if (n >= TOTAL) {
       recordWin('bubbles');
       recordOutcome('bubbles', poppedCount.current >= TOTAL / 2);
-      window.setTimeout(() => setDone(true), popped ? 450 : 600);
+      later(() => setDone(true), popped ? 450 : 600);
     }
   };
 
-  /** Spawn only when there is room — never evict a live bubble. */
+  /** Spawn only when there is room — never evict a live bubble.
+   *  Room = live bubbles on screen (not id arithmetic — ids are global across
+   *  restarts while resolvedIds is per-round, so that math lies after restart). */
   const spawn = () => {
     if (spawnedRef.current >= TOTAL) return;
-    if (idRef.current - resolvedIds.current.size >= MAX_ON_SCREEN) return;
+    if (liveRef.current >= MAX_ON_SCREEN) return;
     spawnedRef.current += 1;
+    liveRef.current += 1;
+    const round = roundRef.current;
     const b = makeBubble(level);
     setBubbles((bs) => [...bs, b]);
     // Backstop: even if the animationend event is swallowed (power-saving,
     // background tab, browser quirk), the bubble ALWAYS resolves.
-    window.setTimeout(() => resolve(b.id, false), (b.dur + 1.5) * 1000);
+    later(() => resolve(b.id, false, undefined, round), (b.dur + 1.5) * 1000);
   };
 
   useEffect(() => {
@@ -124,12 +144,18 @@ export default function Bubbles({ onHome }: { onHome: () => void }) {
       },
       FAST ? 500 : 1300,
     );
-    return () => window.clearInterval(id);
+    return () => {
+      window.clearInterval(id);
+      disarmAll(); // leaving the screen disarms every pending timer
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [level]);
 
   const restart = () => {
+    roundRef.current += 1; // kill every stale closure from the old round…
+    disarmAll(); // …and its timers, so nothing outlives the reset
     spawnedRef.current = 0;
+    liveRef.current = 0;
     poppedCount.current = 0;
     resolvedIds.current.clear();
     setBubbles([]);
@@ -166,9 +192,9 @@ export default function Bubbles({ onHome }: { onHome: () => void }) {
             <button
               key={b.id}
               ref={idx === 0 ? leadBubbleRef : undefined}
-              onPointerDown={() => !b.popped && resolve(b.id, true, b.label)}
+              onPointerDown={() => !b.popped && resolve(b.id, true, b.label, roundRef.current)}
               onAnimationEnd={(e) => {
-                if (e.animationName === 'drift') resolve(b.id, false);
+                if (e.animationName === 'drift') resolve(b.id, false, undefined, roundRef.current);
               }}
               className="absolute"
               style={{
