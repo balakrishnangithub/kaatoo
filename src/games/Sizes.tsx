@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Art } from '../art';
 import { WORDS, type WordCard } from '../data/content';
 import { chimeGood, chimeSoft, speak } from '../lib/speech';
+import { fitSizes, sizesFor } from '../lib/seriation';
 import { useStore } from '../lib/store';
 import { EndCard, GameShell } from '../components/chrome';
 import { sample } from '../lib/util';
@@ -11,12 +12,6 @@ import { GuideHand } from '../components/hint';
 /* seriation: tap items from biggest to smallest — a core early-math skill */
 const ROUNDS = 4;
 
-function sizesFor(level: number): number[] {
-  if (level === 0) return [124, 84, 52];
-  if (level === 1) return [132, 104, 78, 54];
-  return [140, 116, 94, 74, 56];
-}
-
 interface It {
   id: number;
   size: number;
@@ -24,7 +19,6 @@ interface It {
 
 export default function Sizes({ onHome }: { onHome: () => void }) {
   const { levelFor, recordWin, recordOutcome } = useStore();
-  const level = levelFor('sizes', 2);
   const [round, setRound] = useState(0);
   const [word, setWord] = useState<WordCard>(() => sample(WORDS, 1)[0]);
   const [items, setItems] = useState<It[]>([]);
@@ -39,6 +33,23 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
   const timersRef = useRef<number[]>([]); // every timeout we arm — restart/unmount disarms all
   const epochRef = useRef(0); // increments on restart — stale closures die with their epoch
   const done = ended || round >= ROUNDS;
+
+  // Freeze the difficulty for the whole sitting. levelFor reads live store
+  // state, so a level-up would otherwise retrigger the round effect MID-play
+  // (level is a dep) and silently re-deal a bigger round — the "items changed
+  // by themselves" bug. Snapshot once at mount; the new level applies next visit.
+  const [level] = useState(() => levelFor('sizes', 2));
+
+  // measured field width — artwork sizes adapt so the row never overflows
+  const [fieldW, setFieldW] = useState(0);
+  useEffect(() => {
+    const el = layerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setFieldW(el.clientWidth));
+    ro.observe(el);
+    setFieldW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
 
   /** Every timeout goes through here so a reset can disarm the whole batch. */
   const later = (fn: () => void, ms: number) => {
@@ -71,6 +82,9 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
     [round],
     !done,
   );
+
+  // fitted artwork sizes + gap for the current field — computed once per render
+  const fitted = fitSizes(sizesFor(level), fieldW || 360);
 
   // items carry id === rank (0 biggest)
   const tap = (it: It) => {
@@ -140,11 +154,12 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
             guideKey="sizes"
             active={items.length > 0 && nextRank < items.length && !done}
           />
-          <div className="flex items-end justify-center gap-5">
+          <div className="flex items-end justify-center" style={{ gap: fitted.gap }}>
             {/* once she finishes, the items glide into biggest→smallest order —
                 the arrangement itself becomes the reward (FLIP animation) */}
             {(ordered ? [...items].sort((a, b) => a.id - b.id) : items).map((it, idx) => {
               const cleared = it.id < nextRank;
+              const displaySize = fitted.sizes[it.id] ?? it.size;
               return (
                 <button
                   // round in the key: next round's object is a NEW element, not a
@@ -176,7 +191,7 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
                   style={{ opacity: cleared && !ordered ? 0.25 : 1 }}
                   aria-label={`size ${it.id}`}
                 >
-                  <Art id={word.art} size={it.size} />
+                  <Art id={word.art} size={displaySize} />
                 </button>
               );
             })}

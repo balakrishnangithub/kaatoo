@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import Sizes from './Sizes';
+import { fitSizes, sizesFor } from '../lib/seriation';
 import { StoreProvider } from '../lib/store';
 
 /**
  * Regression test for the "round changed by itself" bug:
  *
- *   - tapping "again" on the EndCard let stale 550ms/2400ms timers fire into
+ *   - tapping "again" on the EndCard let stale 550ms/2600ms timers fire into
  *     the fresh game, auto-advancing or re-ordering it ("didn't wait,
  *     changed on its own");
  *   - and the fresh round must be immediately playable with every item live.
@@ -53,6 +54,50 @@ async function finishRound(container: HTMLElement) {
   }
   return n;
 }
+
+describe('Sizes — responsive layout (the overflow bug)', () => {
+  // the devices this app must run well on, CSS px widths of the play field
+  const FIELDS = [221, 251, 273, 360, 645]; // M53, iPhone13, S23U(rounded), small, Tab S7
+
+  it('row never overflows the field at any level — the actual bug', () => {
+    for (const level of [0, 1, 2]) {
+      for (const w of FIELDS) {
+        const { sizes, gap } = fitSizes(sizesFor(level), w);
+        const total = sizes.reduce((a, b) => a + b, 0) + gap * (sizes.length - 1);
+        // hard invariant: the row fits the field itself — nothing goes off-screen.
+        // (on the narrowest field the tappability floor may push past the 92%
+        // comfort budget by design, but never past the field edge)
+        expect(total, `level ${level} on ${w}px: row ${total}px`).toBeLessThanOrEqual(w);
+        expect(gap).toBeGreaterThanOrEqual(8);
+      }
+    }
+  });
+
+  it('sizes stay strictly descending (seriation never distorted)', () => {
+    for (const level of [0, 1, 2]) {
+      for (const w of FIELDS) {
+        const { sizes } = fitSizes(sizesFor(level), w);
+        for (let i = 1; i < sizes.length; i++) {
+          expect(sizes[i - 1], `level ${level} @${w}px idx ${i}`).toBeGreaterThan(sizes[i]);
+        }
+      }
+    }
+  });
+
+  it('tappability floor is respected and ideal sizes used when roomy', () => {
+    // per-count floors: 3 items ≥ 48px, 4 items ≥ 40px, 5 items ≥ 30px
+    const floors: Record<number, number> = { 0: 48, 1: 40, 2: 30 };
+    for (const level of [0, 1, 2]) {
+      for (const w of FIELDS) {
+        const { sizes } = fitSizes(sizesFor(level), w);
+        expect(Math.min(...sizes), `level ${level} @${w}px`).toBeGreaterThanOrEqual(floors[level]);
+      }
+    }
+    const roomy = fitSizes(sizesFor(2), 645);
+    expect(roomy.sizes).toEqual([140, 116, 94, 74, 56]); // untouched on the tablet
+    expect(roomy.gap).toBe(20);
+  });
+});
 
 describe('Sizes — round transition integrity', () => {
   beforeEach(() => vi.useFakeTimers());
