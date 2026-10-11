@@ -36,7 +36,20 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
   const layerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Record<number, HTMLButtonElement | null>>({});
   const preRects = useRef<Record<number, DOMRect>>({});
+  const timersRef = useRef<number[]>([]); // every timeout we arm — restart/unmount disarms all
+  const epochRef = useRef(0); // increments on restart — stale closures die with their epoch
   const done = ended || round >= ROUNDS;
+
+  /** Every timeout goes through here so a reset can disarm the whole batch. */
+  const later = (fn: () => void, ms: number) => {
+    const t = window.setTimeout(fn, ms);
+    timersRef.current.push(t);
+  };
+  const disarmAll = () => {
+    for (const t of timersRef.current) window.clearTimeout(t);
+    timersRef.current = [];
+  };
+  useEffect(() => disarmAll, []); // unmount: nothing fires into a dead screen
 
   useEffect(() => {
     const sizes = sizesFor(level);
@@ -52,15 +65,11 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
     setOrdered(false);
   }, [round, level]);
 
-  useInstruction(
-    'பெரியதிலிருந்து சிறியது வரை தொடு',
-    'tap from biggest to smallest',
-    [round],
-    !done,
-  );
+  useInstruction('பெரியதிலிருந்து சிறியது வரை தொடு', 'tap from biggest to smallest', [round], !done);
 
   // items carry id === rank (0 biggest)
   const tap = (it: It) => {
+    if (done || ordered) return; // round over / celebrating — taps must not queue ghost timers
     if (it.id < nextRank) return; // already done
     if (it.id === nextRank) {
       chimeGood();
@@ -72,6 +81,7 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
       setNextRank(nr);
       if (nr >= items.length) {
         recordOutcome('sizes', misses === 0);
+        const epoch = epochRef.current;
         // celebration: the row rearranges itself into biggest→smallest order
         // (FLIP: remember where each item is, reorder, glide them over)
         const rects: Record<number, DOMRect> = {};
@@ -80,8 +90,12 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
           if (el) rects[it.id] = el.getBoundingClientRect();
         }
         preRects.current = rects;
-        window.setTimeout(() => setOrdered(true), 550);
-        window.setTimeout(() => {
+        later(() => {
+          if (epoch !== epochRef.current) return; // restarted meanwhile
+          setOrdered(true);
+        }, 550);
+        later(() => {
+          if (epoch !== epochRef.current) return;
           // last round: end here — no phantom question behind the end card
           if (round + 1 >= ROUNDS) {
             recordWin('sizes');
@@ -89,13 +103,17 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
           } else {
             setRound((r) => r + 1);
           }
-        }, 2400);
+        }, 2600); // let the sorted row land — the celebration IS the reward
       }
     } else {
       chimeSoft();
       setWrong(it.id);
       setMisses((m) => m + 1);
-      window.setTimeout(() => setWrong(null), 450);
+      const epoch = epochRef.current;
+      later(() => {
+        if (epoch !== epochRef.current) return;
+        setWrong(null);
+      }, 450);
     }
   };
 
@@ -124,7 +142,9 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
               const cleared = it.id < nextRank;
               return (
                 <button
-                  key={it.id}
+                  // round in the key: next round's object is a NEW element, not a
+                  // morph of the old one — no cross-round animation/reuse glitches
+                  key={`${round}-${it.id}`}
                   ref={(el) => {
                     const prev = itemRefs.current[it.id];
                     itemRefs.current[it.id] = el;
@@ -161,6 +181,8 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
       {done && (
         <EndCard
           onAgain={() => {
+            epochRef.current += 1; // kill every pending round-advance/celebration timer…
+            disarmAll(); // …so the fresh game is never auto-advanced by the old one
             setEnded(false);
             setRound(0);
           }}
