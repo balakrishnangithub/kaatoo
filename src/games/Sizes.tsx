@@ -65,7 +65,12 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
     setOrdered(false);
   }, [round, level]);
 
-  useInstruction('பெரியதிலிருந்து சிறியது வரை தொடு', 'tap from biggest to smallest', [round], !done);
+  useInstruction(
+    'பெரியதிலிருந்து சிறியது வரை தொடு',
+    'tap from biggest to smallest',
+    [round],
+    !done,
+  );
 
   // items carry id === rank (0 biggest)
   const tap = (it: It) => {
