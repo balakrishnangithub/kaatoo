@@ -137,9 +137,14 @@ function build(level: number): RoundData {
 
 export default function Odd({ onHome }: { onHome: () => void }) {
   const { levelFor, recordWin, recordOutcome } = useStore();
-  const level = levelFor('odd', 3);
+  // Freeze the difficulty for the whole sitting (same fix as sizes). levelFor
+  // reads live progress, so a level change on her correct tap re-dealt the
+  // round MID-question — the match-model vanished or appeared by itself, and
+  // the spoken prompt no longer matched the screen ("find the same" with no
+  // reference image). Snapshot once at mount; the new level applies next visit.
+  const [level] = useState(() => levelFor('odd', 3));
   const [round, setRound] = useState(0);
-  const [data, setData] = useState<RoundData>(() => build(0));
+  const [data, setData] = useState<RoundData>(() => build(level));
   const [wrong, setWrong] = useState<string | null>(null);
   const missesRef = useRef(0);
   const [misses, setMisses] = useState(0);
