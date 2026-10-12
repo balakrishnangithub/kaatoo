@@ -37,7 +37,6 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
   const [misses, setMisses] = useState(0);
   const [ended, setEnded] = useState(false);
   const [phase, setPhase] = useState<Phase>('play');
-  const [shuffled, setShuffled] = useState(false); // false = staircase, true = spawn row
   const layerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Record<number, HTMLButtonElement | null>>({});
   const timersRef = useRef<number[]>([]); // every timeout we arm — restart/unmount disarms all
@@ -85,9 +84,6 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
     setMisses(0);
     setWrong(null);
     setPhase('play');
-    // spawn SHUFFLED (dealt to her), cut to the staircase on the first
-    // correct tap; never spawn already-sorted — she must build that herself
-    setShuffled(sizes.length > 1);
   }, [round, level]);
 
   useInstruction(
@@ -97,19 +93,18 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
     !done,
   );
 
-  // fitted sizes + slots for both rows: the shuffled spawn row packs by
-  // RENDER order, the staircase by rank. Gaps are per-count minimums —
-  // a smaller item's button is as wide as its artwork is tall, so without
-  // a real corridor a placed neighbour would swallow its taps.
+  // fitted sizes + slots: the dealt row packs by RENDER order (the layout
+  // never rearranges), the staircase slots mark where placed items line up.
+  // Gaps are per-count minimums — a smaller item's button is as wide as its
+  // artwork is tall, so without a real corridor a neighbour swallows taps.
   const fitted = fitSizes(sizesFor(level), fieldW || 360);
   const n = fitted.sizes.length;
   const slotGap = n <= 3 ? 12 : n === 4 ? 16 : 20;
   const stairSlots = staircaseSlots(fitted.sizes, slotGap);
-  const spawnSlots = staircaseSlots(
+  const slots = staircaseSlots(
     items.map((it) => fitted.sizes[it.id]),
     slotGap,
   );
-  const slots = shuffled ? spawnSlots : stairSlots;
   const totalW = slots.length ? slots[slots.length - 1].x + slots[slots.length - 1].size / 2 : 0;
 
   // items carry id === rank (0 biggest)
@@ -123,11 +118,10 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
         nextRank === 0 ? 'பெரியது!' : nextRank === items.length - 1 ? 'சிறியது!' : 'சரி!',
         'ta',
       );
-      // FLIP the tapped item into its staircase slot. From the shuffled row
-      // the whole row CUTS to the staircase at the same instant (staircase
-      // slots can overlap spawn slots mid-glide — a placed item must never
-      // cover a live one); inside the staircase slots never overlap, so the
-      // glide stays visible for every later tap.
+      // The tapped item — and ONLY the tapped item — glides to the front of
+      // the line (first-tried items on the left, in the order she picked
+      // them). Nothing else ever moves: the rearrange-by-itself was the
+      // confusion. Her hand is the only thing that changes the picture.
       if (el) {
         const startLeft = el.offsetLeft;
         const slotLeft = stairSlots[it.id].x - fitted.sizes[it.id] / 2;
@@ -140,7 +134,6 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
           });
         });
       }
-      if (shuffled) setShuffled(false);
       const nr = nextRank + 1;
       setNextRank(nr);
       if (nr >= items.length) {
@@ -211,9 +204,9 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
             <div className="relative mx-auto" style={{ width: totalW, height: fitted.sizes[0] }}>
               {items.map((it, idx) => {
                 const placed = it.id < nextRank;
-                // shuffled: slots follow render order (the dealt row);
-                // staircase: slots follow rank — her taps build it left→right
-                const slot = shuffled ? slots[idx] : slots[it.id];
+                // items never rearrange: the dealt row stays put; a correct
+                // tap glides only the tapped item to its spot up front
+                const slot = slots[idx];
                 return (
                   <button
                     key={`${round}-${it.id}`}

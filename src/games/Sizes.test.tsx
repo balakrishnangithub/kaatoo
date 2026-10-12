@@ -11,11 +11,11 @@ import { StoreProvider } from '../lib/store';
  *   strictly descending, and never shrink below a tappable floor.
  *
  *   Choreography — every visible change must be caused by a tap and happen
- *   visibly: a correct tap places the item (no ghost-fade), the completed
- *   staircase celebrates and leaves as one object, and stale timers from a
- *   previous game can never mutate a fresh one ("items changed by
- *   themselves"). The glide itself is FLIP movement — verified in a real
- *   browser, not jsdom.
+ *   visibly: a correct tap places ONLY that item (nothing else ever moves,
+ *   no fade-away), the completed line celebrates and leaves as one object,
+ *   and stale timers from a previous game can never mutate a fresh one
+ *   ("items changed by themselves"). The glide itself is FLIP movement —
+ *   verified in a real browser, not jsdom.
  */
 
 function renderGame() {
@@ -154,6 +154,26 @@ describe('Sizes — choreography integrity', () => {
     expect(buttons.get(0)!.style.opacity).not.toBe('0.25');
     expect(buttons.get(0)!).toBeDisabled();
     expect(buttons.get(1)!).not.toBeDisabled(); // next is live
+  });
+
+  it('untapped items NEVER move — a tap rearranges nothing but its own item', async () => {
+    const { container } = renderGame();
+    await flush(100);
+    const buttons = sizeButtons(container);
+    const leftOf = (rank: number) => buttons.get(rank)!.style.left;
+    const before = new Map([...buttons.keys()].map((r) => [r, leftOf(r)]));
+
+    fireEvent.click(buttons.get(0)!); // correct: biggest
+    await flush(100);
+
+    for (const r of buttons.keys()) {
+      if (r === 0) continue;
+      expect(leftOf(r), `rank ${r} must not move when rank 0 is tapped`).toBe(before.get(r));
+    }
+
+    fireEvent.click(buttons.get(1)!); // next correct
+    await flush(100);
+    expect(leftOf(2), 'rank 2 must not move when rank 1 is tapped').toBe(before.get(2));
   });
 
   it('restart never auto-advances the fresh game, and it stays playable', async () => {
