@@ -19,9 +19,9 @@ import { GuideHand } from '../components/hint';
 const ROUNDS = 4;
 const ROW_GAP = 26; // vertical gap between the dealt row and the answer line
 
-// choreography budget (ms): grow-in 500 → play → last glide 600 → bounce 800
-// → hold 600 → row exits 700. Total after final tap ≈ 2600.
-const T = { growIn: 500, glide: 600, bounce: 800, hold: 600, exit: 700 };
+// choreography budget (ms): grow-in 500 → play → last glide 600 → bob 600
+// → hold 600 → row drifts out 700. Total after final tap ≈ 2500.
+const T = { growIn: 500, glide: 600, bounce: 600, hold: 600, exit: 700 };
 
 interface It {
   id: number; // rank: 0 = biggest
@@ -82,7 +82,7 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
       sizes
         .map((s, rank) => ({ id: rank, size: s, sort: Math.random() }))
         .sort((a, b) => a.sort - b.sort)
-        .map(({ id, size }) => ({ id, size })),
+        .map(({ id, size })),
     );
     setNextRank(0);
     setMisses(0);
@@ -209,38 +209,44 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
             guideKey="sizes"
             active={phase === 'play' && items.length > 0 && nextRank < items.length && !done}
           />
-          <div
-            className={`absolute inset-x-0 top-1/2 -translate-y-1/2 ${phase === 'celebrate' ? 'anim-happy' : ''} ${phase === 'exit' ? 'anim-row-exit' : ''}`}
-          >
-            <div className="relative mx-auto" style={{ width: totalW, height: rowH }}>
-              {items.map((it, idx) => {
-                const placed = it.id < nextRank;
-                const s = fitted.sizes[it.id] ?? it.size;
-                // dealt row on top (never rearranges) → answer line below;
-                // the bands never overlap, so nothing can cover a live item
-                const slot = placed ? stairSlots[it.id] : slots[idx];
-                return (
-                  <button
-                    key={`${round}-${it.id}`}
-                    ref={(el) => {
-                      itemRefs.current[it.id] = el;
-                    }}
-                    onClick={() => tap(it)}
-                    disabled={placed || phase !== 'play'}
-                    className={`absolute ${phase === 'play' && !placed ? 'anim-pop' : ''} ${wrong === it.id ? 'anim-wiggle' : ''} ${phase === 'play' && !placed && misses >= 2 && it.id === nextRank ? 'anim-hint rounded-3xl' : ''}`}
-                    style={{
-                      left: slot.x - s / 2,
-                      top: placed ? rowH - s : fitted.sizes[0] - s,
-                      animationDelay:
-                        phase === 'play' && !placed ? `${entranceDelay(idx)}ms` : undefined,
-                      zIndex: placed ? 1 : 0,
-                    }}
-                    aria-label={`size ${it.id}`}
-                  >
-                    <Art id={word.art} size={s} />
-                  </button>
-                );
-              })}
+          {/* centred with flexbox, NOT a transform — the celebration
+              animations animate transform, and any transform-based
+              centering on the same element would be clobbered by the
+              keyframes (that's what caused the visible snaps) */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div
+              className={`${phase === 'celebrate' ? 'anim-happy' : ''} ${phase === 'exit' ? 'anim-row-exit' : ''}`}
+            >
+              <div className="relative mx-auto" style={{ width: totalW, height: rowH }}>
+                {items.map((it, idx) => {
+                  const placed = it.id < nextRank;
+                  const s = fitted.sizes[it.id] ?? it.size;
+                  // dealt row on top (never rearranges) → answer line below;
+                  // the bands never overlap, so nothing can cover a live item
+                  const slot = placed ? stairSlots[it.id] : slots[idx];
+                  return (
+                    <button
+                      key={`${round}-${it.id}`}
+                      ref={(el) => {
+                        itemRefs.current[it.id] = el;
+                      }}
+                      onClick={() => tap(it)}
+                      disabled={placed || phase !== 'play'}
+                      className={`absolute ${phase === 'play' && !placed ? 'anim-pop' : ''} ${wrong === it.id ? 'anim-wiggle' : ''} ${phase === 'play' && !placed && misses >= 2 && it.id === nextRank ? 'anim-hint rounded-3xl' : ''}`}
+                      style={{
+                        left: slot.x - s / 2,
+                        top: placed ? rowH - s : fitted.sizes[0] - s,
+                        animationDelay:
+                          phase === 'play' && !placed ? `${entranceDelay(idx)}ms` : undefined,
+                        zIndex: placed ? 1 : 0,
+                      }}
+                      aria-label={`size ${it.id}`}
+                    >
+                      <Art id={word.art} size={s} />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
