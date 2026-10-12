@@ -10,10 +10,14 @@ import { useInstruction } from '../hooks/useInstruction';
 import { GuideHand } from '../components/hint';
 
 /* seriation: tap items from biggest to smallest — a core early-math skill.
-   Design: SHE builds the staircase — each correct tap glides the item into
-   its slot (biggest on the left). Nothing ever appears, vanishes, or
-   rearranges by itself; every change is caused by her hand and visible. */
+   Design: SHE builds the staircase — each correct tap glides the item DOWN
+   into the answer line below the dealt row (biggest on the left). The dealt
+   row never rearranges, and because the two rows are physically separate
+   bands, a placed item can never cover an untapped one. Nothing ever
+   appears, vanishes, or rearranges by itself; every change is caused by
+   her hand and visible. */
 const ROUNDS = 4;
+const ROW_GAP = 26; // vertical gap between the dealt row and the answer line
 
 // choreography budget (ms): grow-in 500 → play → last glide 600 → bounce 800
 // → hold 600 → row exits 700. Total after final tap ≈ 2600.
@@ -94,9 +98,10 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
   );
 
   // fitted sizes + slots: the dealt row packs by RENDER order (the layout
-  // never rearranges), the staircase slots mark where placed items line up.
-  // Gaps are per-count minimums — a smaller item's button is as wide as its
-  // artwork is tall, so without a real corridor a neighbour swallows taps.
+  // never rearranges), the staircase slots mark where placed items line up
+  // in the answer line below. Gaps are per-count minimums — a smaller item's
+  // button is as wide as its artwork is tall, so without a real corridor a
+  // neighbour swallows taps.
   const fitted = fitSizes(sizesFor(level), fieldW || 360);
   const n = fitted.sizes.length;
   const slotGap = n <= 3 ? 12 : n === 4 ? 16 : 20;
@@ -106,6 +111,8 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
     slotGap,
   );
   const totalW = slots.length ? slots[slots.length - 1].x + slots[slots.length - 1].size / 2 : 0;
+  // two bands: dealt row (height = biggest item) + gap + answer line below
+  const rowH = fitted.sizes[0] * 2 + ROW_GAP;
 
   // items carry id === rank (0 biggest)
   const tap = (it: It) => {
@@ -118,15 +125,19 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
         nextRank === 0 ? 'பெரியது!' : nextRank === items.length - 1 ? 'சிறியது!' : 'சரி!',
         'ta',
       );
-      // The tapped item — and ONLY the tapped item — glides to the front of
-      // the line (first-tried items on the left, in the order she picked
-      // them). Nothing else ever moves: the rearrange-by-itself was the
-      // confusion. Her hand is the only thing that changes the picture.
+      // The tapped item — and ONLY the tapped item — glides down into its
+      // slot in the answer line (first-tried items on the left, in the order
+      // she picked them). Nothing else ever moves: the rearrange-by-itself
+      // was the confusion. Her hand is the only thing that changes the picture.
       if (el) {
+        const s = fitted.sizes[it.id];
         const startLeft = el.offsetLeft;
-        const slotLeft = stairSlots[it.id].x - fitted.sizes[it.id] / 2;
+        const startTop = el.offsetTop;
+        const slotLeft = stairSlots[it.id].x - s / 2;
+        const slotTop = rowH - s;
         el.style.left = `${slotLeft}px`;
-        el.style.transform = `translateX(${startLeft - slotLeft}px)`;
+        el.style.top = `${slotTop}px`;
+        el.style.transform = `translate(${startLeft - slotLeft}px, ${startTop - slotTop}px)`;
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             el.style.transition = `transform ${T.glide}ms cubic-bezier(0.3, 0.9, 0.3, 1.1)`;
@@ -201,12 +212,13 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
           <div
             className={`absolute inset-x-0 top-1/2 -translate-y-1/2 ${phase === 'celebrate' ? 'anim-happy' : ''} ${phase === 'exit' ? 'anim-row-exit' : ''}`}
           >
-            <div className="relative mx-auto" style={{ width: totalW, height: fitted.sizes[0] }}>
+            <div className="relative mx-auto" style={{ width: totalW, height: rowH }}>
               {items.map((it, idx) => {
                 const placed = it.id < nextRank;
-                // items never rearrange: the dealt row stays put; a correct
-                // tap glides only the tapped item to its spot up front
-                const slot = slots[idx];
+                const s = fitted.sizes[it.id] ?? it.size;
+                // dealt row on top (never rearranges) → answer line below;
+                // the bands never overlap, so nothing can cover a live item
+                const slot = placed ? stairSlots[it.id] : slots[idx];
                 return (
                   <button
                     key={`${round}-${it.id}`}
@@ -215,16 +227,17 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
                     }}
                     onClick={() => tap(it)}
                     disabled={placed || phase !== 'play'}
-                    className={`absolute bottom-0 ${phase === 'play' && !placed ? 'anim-pop' : ''} ${wrong === it.id ? 'anim-wiggle' : ''} ${phase === 'play' && !placed && misses >= 2 && it.id === nextRank ? 'anim-hint rounded-3xl' : ''}`}
+                    className={`absolute ${phase === 'play' && !placed ? 'anim-pop' : ''} ${wrong === it.id ? 'anim-wiggle' : ''} ${phase === 'play' && !placed && misses >= 2 && it.id === nextRank ? 'anim-hint rounded-3xl' : ''}`}
                     style={{
-                      left: slot.x - fitted.sizes[it.id] / 2,
+                      left: slot.x - s / 2,
+                      top: placed ? rowH - s : fitted.sizes[0] - s,
                       animationDelay:
                         phase === 'play' && !placed ? `${entranceDelay(idx)}ms` : undefined,
                       zIndex: placed ? 1 : 0,
                     }}
                     aria-label={`size ${it.id}`}
                   >
-                    <Art id={word.art} size={fitted.sizes[it.id] ?? it.size} />
+                    <Art id={word.art} size={s} />
                   </button>
                 );
               })}
