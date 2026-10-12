@@ -82,7 +82,7 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
       sizes
         .map((s, rank) => ({ id: rank, size: s, sort: Math.random() }))
         .sort((a, b) => a.sort - b.sort)
-        .map(({ id, size })),
+        .map(({ id, size }) => ({ id, size })),
     );
     setNextRank(0);
     setMisses(0);
