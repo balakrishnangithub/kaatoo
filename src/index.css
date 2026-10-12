@@ -212,23 +212,19 @@ textarea {
   animation: soft-pulse 1.6s ease-in-out infinite;
 }
 
-/* sizes game: the finished staircase bounces once, happy */
+/* sizes game: the finished staircase bobs up once, gently — no squish,
+   no multi-keyframe jumpiness. Fixed px (not % or vh) so the motion is
+   the same calm distance on every screen. */
 @keyframes happy-bounce {
   0%,
   100% {
-    transform: translateY(0) scaleY(1);
+    transform: translateY(0);
   }
-  30% {
-    transform: translateY(-10%) scaleY(1.06);
-  }
-  55% {
-    transform: translateY(2%) scaleY(0.96);
-  }
-  75% {
-    transform: translateY(-4%) scaleY(1.02);
+  40% {
+    transform: translateY(-18px);
   }
 }
-/* the completed row leaves upward as one object */
+/* the completed row drifts up a little and fades — a soft goodbye */
 @keyframes row-exit {
   from {
     opacity: 1;
@@ -236,12 +232,11 @@ textarea {
   }
   to {
     opacity: 0;
-    transform: translateY(-14vh);
+    transform: translateY(-48px);
   }
 }
 .anim-happy {
-  animation: happy-bounce 0.8s ease-in-out;
-  transform-origin: bottom center;
+  animation: happy-bounce 0.6s ease-in-out;
 }
 .anim-row-exit {
   animation: row-exit 0.7s ease-in both;
