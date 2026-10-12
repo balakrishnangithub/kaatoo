@@ -32,21 +32,54 @@ export function fitSizes(sizes: number[], fieldWidth: number): { sizes: number[]
 
   // 2) shrink gaps to 8px, scale artwork down (never up) toward the budget
   const gap = 8;
-  const scale = Math.min(1, (budget - gap * (n - 1)) / sum);
+  // headroom: the game later packs slots with a wider per-count button gap
+  // (12/16/20) — the scale step must leave room for that or the packed row
+  // would outgrow the field
+  const slotGap = n <= 3 ? 12 : n === 4 ? 16 : 20;
+  const scale = Math.min(1, (budget - slotGap * (n - 1)) / sum);
   const scaled = sizes.map((s) => Math.round(s * scale));
 
   // 3) floor: never below a per-count tappable minimum — if scaling went
-  //    under, lift the smallest items just enough, compressing the spread
-  //    from the top so the row stays descending and as close to budget as possible
+  //    under, lift the smallest items just enough, then re-spread descending
   const floor = n <= 3 ? 48 : n === 4 ? 40 : 30;
-  if (Math.min(...scaled) >= floor) return { sizes: scaled, gap };
-
-  const lifted = scaled.map((s) => Math.max(floor, s));
-  // re-spread strictly descending where the floor flattened the tail — keep
-  // the steps minimal so the row still fits inside the field itself
-  const step = Math.max(2, Math.round(floor * 0.06));
-  for (let i = lifted.length - 2; i >= 0; i--) {
-    if (lifted[i] <= lifted[i + 1]) lifted[i] = lifted[i + 1] + step;
+  if (Math.min(...scaled) < floor) {
+    const lifted = scaled.map((s) => Math.max(floor, s));
+    const step = Math.max(2, Math.round(floor * 0.06));
+    for (let i = lifted.length - 2; i >= 0; i--) {
+      if (lifted[i] <= lifted[i + 1]) lifted[i] = lifted[i + 1] + step;
+    }
+    scaled.splice(0, scaled.length, ...lifted);
   }
-  return { sizes: lifted, gap };
+
+  // 4) hard guarantee: the packed staircase row (artwork + button gaps) must
+  //    never exceed the field itself — shrink proportionally as a last resort
+  const packed = (arr: number[]) => arr.reduce((a, b) => a + b, 0) + slotGap * (n - 1);
+  if (packed(scaled) > fieldWidth) {
+    const shrink = (fieldWidth - slotGap * (n - 1)) / scaled.reduce((a, b) => a + b, 0);
+    return { sizes: scaled.map((s) => Math.floor(s * shrink)), gap };
+  }
+  return { sizes: scaled, gap };
+}
+
+/**
+ * Staircase layout: every item owns a fixed slot (left = biggest). Slots are
+ * packed by BUTTON WIDTH, not artwork width — every artwork is a square SVG,
+ * so a smaller item's button is just as wide as its artwork is tall, and the
+ * effective button gap would otherwise collapse toward zero (a placed big
+ * item then physically covers its small neighbour and eats its taps).
+ * minGap guarantees a real tap corridor between neighbouring buttons.
+ * Returns one entry per rank (0 = biggest): x = slot centre from the row's
+ * left edge, size = that item's artwork size. The row is centred in the field
+ * by the caller, so x=0 means "left edge of the row", wherever the row sits.
+ */
+export function staircaseSlots(
+  sizes: number[],
+  minGap: number,
+): { rank: number; x: number; size: number }[] {
+  let cursor = 0;
+  return sizes.map((size, rank) => {
+    const slot = { rank, x: cursor + size / 2, size };
+    cursor += size + minGap;
+    return slot;
+  });
 }
