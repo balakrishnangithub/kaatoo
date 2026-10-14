@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { StoreProvider } from '../lib/store';
+import { seedProfile } from '../test/helpers';
 import type { default as BubblesComponent } from './Bubbles';
 
 /**
@@ -34,8 +35,10 @@ async function loadGame() {
   if (!Bubbles) Bubbles = (await import('./Bubbles')).default;
 }
 
-function renderGame() {
-  localStorage.clear();
+function renderGame(
+  progress: Record<string, { plays: number; wins: number; outcomes: number[] }> = {},
+) {
+  seedProfile({ settings: { sound: false, stageOverride: 0 }, progress });
   return render(
     <StoreProvider>
       <Bubbles onHome={() => {}} />
@@ -114,6 +117,24 @@ describe('Bubbles — restart integrity', () => {
     await flush(3000);
     expect(bubbles(container).length).toBeGreaterThan(0);
     expect(dots(container)).toBeLessThan(TOTAL); // in progress, not zombied
+  });
+
+  it('the end card appears even when this round changes the difficulty level', async () => {
+    // Three clean rounds on record: finishing this one tips the level up. The
+    // level used to be read live, so that change re-ran the spawn effect, whose
+    // cleanup disarmed the timer about to show the end card — an empty field,
+    // twelve dots, and nothing more, for as long as she waited.
+    const { container } = renderGame({ bubbles: { plays: 3, wins: 3, outcomes: [1, 1, 1] } });
+    await playRound(container);
+    const saved = JSON.parse(localStorage.getItem('kaatoo-v1') || '{}');
+    expect(saved.progress.bubbles.outcomes).toEqual([1, 1, 1, 1]); // the level did tip
+    expect(screen.getByLabelText('again')).toBeInTheDocument();
+    expect(dots(container)).toBe(TOTAL);
+
+    // and the game goes on being playable afterwards
+    fireEvent.click(screen.getByLabelText('again'));
+    await flush(3000);
+    expect(bubbles(container).length).toBeGreaterThan(0);
   });
 
   it('rapid double-restart leaves exactly one live round', async () => {

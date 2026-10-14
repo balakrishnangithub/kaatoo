@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { useStore } from '../lib/store';
+import type { GameId } from '../data/content';
+import { useGuide } from '../hooks/useGuide';
 
 /**
  * Adaptive guiding hand.
@@ -19,8 +20,8 @@ import { useStore } from '../lib/store';
  *  It dismisses instantly on any pointer-down anywhere.
  */
 
-/** Returns the pixel center of a target element, relative to the nearest
- *  positioned ancestor that `relativeTo` (the layer we render the hand into). */
+/** The pixel centre of a target element, relative to the layer the hand is
+ *  rendered into (the positioned ancestor both of them share). */
 function centerOf(target: HTMLElement, layer: HTMLElement): { x: number; y: number } {
   const t = target.getBoundingClientRect();
   const l = layer.getBoundingClientRect();
@@ -36,8 +37,8 @@ interface GuideProps {
   active: boolean;
   /** the layer (position:relative) the hand is absolutely positioned within */
   layerRef: RefObject<HTMLElement | null>;
-  /** per-activity guide key, e.g. "bubbles" — adaptive fading is tracked per activity */
-  guideKey: string;
+  /** the activity being guided — adaptive fading is tracked per activity */
+  guideKey: GameId;
   /** corrective mode: when provided, the hand appears ONLY right after a wrong
    *  attempt (this number increasing = a fresh miss) instead of after idling.
    *  Used by tap-choice games — help answers a mistake, it never anticipates. */
@@ -45,24 +46,22 @@ interface GuideProps {
 }
 
 export function GuideHand({ target, active, layerRef, guideKey, fireSignal }: GuideProps) {
-  const { settings, progress } = useStore();
+  // adaptive fade: more success → wait longer before offering help → then stop
+  const { plays, enabled } = useGuide(guideKey);
+  const idleDelay = 2400 + plays * 900; // 2.4s → 3.3s → 4.2s → 5.1s → off
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [visible, setVisible] = useState(false);
   const timer = useRef<number>(0);
-  // signature of what the timer is currently scheduled for — the session clock
-  // re-renders the app every second, and without this the idle timer would be
-  // cleared and restarted on every tick, so the hand could never appear.
+  // signature of what the timer is currently scheduled for — the game around
+  // the hand re-renders constantly (bubbles come and go), and without this the
+  // idle timer would be cleared and restarted every time, so the hand could
+  // never appear.
   const sig = useRef<{ t: HTMLElement; delay: number } | null>(null);
   // keep the latest resolver in a ref so timers/intervals always read FRESH targets
   const resolveRef = useRef<() => HTMLElement | null>(() => null);
   useEffect(() => {
     resolveRef.current = typeof target === 'function' ? target : () => target.current;
   });
-
-  const plays = progress[guideKey]?.plays ?? 0;
-  // adaptive fade: more success → wait longer before offering help → then stop
-  const enabled = settings.guide !== false && plays < 4;
-  const idleDelay = 2400 + Math.min(plays, 4) * 900; // 2.4s → 3.3s → 4.2s → 5.1s → off
 
   // never leave a pending timer behind when the hand unmounts
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -87,7 +86,7 @@ export function GuideHand({ target, active, layerRef, guideKey, fireSignal }: Gu
   }, [fireSignal, active, enabled]);
 
   // no dep array: runs every render, but reschedules ONLY when the resolved
-  // target (or the adaptive delay) actually changes — ticks are no-ops.
+  // target (or the adaptive delay) actually changes — other renders are no-ops.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (fireSignal !== undefined) return; // corrective mode: no idle timer at all
@@ -228,7 +227,15 @@ export function SwipeableCard({
   const startX = useRef<number | null>(null);
   const dxRef = useRef(0);
   const raf = useRef(0);
-  useEffect(() => () => cancelAnimationFrame(raf.current), []);
+  const flyTimer = useRef(0);
+  // leaving mid-swipe must not turn the page (or speak) on a screen that is gone
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(raf.current);
+      window.clearTimeout(flyTimer.current);
+    },
+    [],
+  );
 
   const down = (e: React.PointerEvent) => {
     if (flying) return;
@@ -264,7 +271,7 @@ export function SwipeableCard({
       // then the deck silently resets with the new card on top
       setFlying(true);
       setDx(d < -60 ? -460 : 460);
-      window.setTimeout(() => {
+      flyTimer.current = window.setTimeout(() => {
         onSwipe?.(dir); // parent swaps the content to the card that was underneath
         setFlying(false);
         setResetting(true); // jump back to centre with no transition — the reveal already happened
@@ -313,34 +320,6 @@ export function SwipeableCard({
       >
         {children}
       </div>
-    </div>
-  );
-}
-
-/**
- * Big pictorial label: icon + Tamil word (+ English). Child reads the picture,
- * hears the word; the printed word rides along for emergent print awareness.
- */
-export function PicLabel({
-  icon,
-  ta,
-  en,
-  center = true,
-}: {
-  icon: ReactNode;
-  ta: string;
-  en?: string;
-  center?: boolean;
-}) {
-  return (
-    <div className={`flex items-center gap-2 ${center ? 'justify-center' : ''}`}>
-      <span className="shrink-0">{icon}</span>
-      <span className="leading-tight">
-        <span className="block font-display font-bold text-plum text-lg">{ta}</span>
-        {en && (
-          <span className="block text-[11px] font-semibold text-plum/50 tracking-wide">{en}</span>
-        )}
-      </span>
     </div>
   );
 }

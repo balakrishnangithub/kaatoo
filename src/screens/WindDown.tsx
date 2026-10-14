@@ -3,6 +3,7 @@ import { Art } from '../art';
 import { OFFLINE_IDEAS } from '../data/content';
 import { speak } from '../lib/speech';
 import { useStore } from '../lib/store';
+import { pick } from '../lib/util';
 import { HoldButton } from '../components/chrome';
 
 const BREATH_SECONDS = 4;
@@ -10,10 +11,13 @@ const CYCLES = 3;
 
 export default function WindDown() {
   const { wake, settings } = useStore();
-  const [phase, setPhase] = useState<'in' | 'out'>('in');
-  const [cycle, setCycle] = useState(0);
+  // one counter of half-breaths: in, out, in, out… Phase and cycle are both
+  // read off it, so they can never disagree about where the breathing is.
+  const [beat, setBeat] = useState(0);
+  const phase = beat % 2 === 0 ? 'in' : 'out';
+  const cycle = Math.floor(beat / 2);
   // chosen once per visit to the rest screen
-  const [idea] = useState(() => OFFLINE_IDEAS[Math.floor(Math.random() * OFFLINE_IDEAS.length)]);
+  const [idea] = useState(() => pick(OFFLINE_IDEAS));
   const finished = cycle >= CYCLES;
 
   useEffect(() => {
@@ -22,12 +26,7 @@ export default function WindDown() {
 
   useEffect(() => {
     if (finished) return;
-    const id = window.setInterval(() => {
-      setPhase((p) => {
-        if (p === 'out') setCycle((c) => c + 1);
-        return p === 'in' ? 'out' : 'in';
-      });
-    }, BREATH_SECONDS * 1000);
+    const id = window.setInterval(() => setBeat((b) => b + 1), BREATH_SECONDS * 1000);
     return () => window.clearInterval(id);
   }, [finished]);
 

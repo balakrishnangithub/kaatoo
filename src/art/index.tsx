@@ -34,6 +34,12 @@ import {
   Tree,
 } from './world2';
 import {
+  FaceAngry,
+  FaceCalm,
+  FaceHappy,
+  FaceSad,
+  FaceSleepy,
+  FaceSurprised,
   ShapeCircle,
   ShapeHeart,
   ShapeOval,
@@ -41,8 +47,8 @@ import {
   ShapeSquare,
   ShapeStar,
   ShapeTriangle,
+  type ShapeProps,
 } from './shapes';
-import { FaceAngry, FaceCalm, FaceHappy, FaceSad, FaceSleepy, FaceSurprised } from './shapes';
 
 export const ART = {
   cat: Cat,
@@ -91,7 +97,9 @@ export const ART = {
 
 export type ArtId = keyof typeof ART;
 
-export function Art({ id, ...p }: ArtProps & { id: ArtId }) {
-  const C = ART[id];
+/** Any artwork by id. `fill` recolours the geometric shapes; the portraits
+ *  (animals, things, faces) have their own colours and simply ignore it. */
+export function Art({ id, ...p }: ShapeProps & { id: ArtId }) {
+  const C: ComponentType<ShapeProps> = ART[id];
   return <C {...p} />;
 }

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '../lib/store';
 import { chimeGood, speakPair } from '../lib/speech';
-import { PRAISE_EN, PRAISE_TA } from '../data/content';
+import { pick } from '../lib/util';
+import { PRAISE } from '../data/content';
 import { Art, type ArtId } from '../art';
 
 /**
@@ -29,6 +30,10 @@ export function HoldButton({
   const start = useRef(0);
 
   const down = () => {
+    // one hold, one clock: a second finger restarts it. Without this, each
+    // extra finger started its own loop that nothing could cancel — and that
+    // orphan went on to open the gate after every finger had lifted.
+    cancelAnimationFrame(raf.current);
     start.current = performance.now();
     const tick = (t: number) => {
       const p = Math.min(1, (t - start.current) / holdMs);
@@ -104,10 +109,7 @@ export function GameShell({
 }) {
   return (
     <div className="flex h-full flex-col">
-      <div
-        className="flex items-center gap-3 px-4 pt-4 pb-2 sm:px-6"
-        style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
-      >
+      <div className="flex items-center gap-3 px-4 pb-2 sm:px-6 safe-top">
         <button
           onClick={onHome}
           aria-label="home"
@@ -135,17 +137,24 @@ export function GameShell({
 }
 
 /* ---------- calm end-of-round card: finite play, natural stopping ---------- */
+
+/** a button's two-line label: Tamil, with the English small beneath it */
+function BiLabel({ ta, en }: { ta: string; en: string }) {
+  return (
+    <span>
+      <span className="block leading-tight">{ta}</span>
+      <span className="block text-[11px] font-semibold opacity-60 leading-tight">{en}</span>
+    </span>
+  );
+}
+
 export function EndCard({ onAgain, onHome }: { onAgain: () => void; onHome: () => void }) {
-  const { goRest, timeLeft } = useStore();
-  const expired = timeLeft <= 0;
-  const [praise] = useState(() => ({
-    ta: PRAISE_TA[Math.floor(Math.random() * PRAISE_TA.length)],
-    en: PRAISE_EN[Math.floor(Math.random() * PRAISE_EN.length)],
-  }));
+  const { goRest, expired, settings } = useStore();
+  const [praise] = useState(() => pick(PRAISE));
 
   useEffect(() => {
     chimeGood();
-    speakPair(praise.ta, praise.en, true);
+    speakPair(praise.ta, praise.en, settings.english);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -158,53 +167,31 @@ export function EndCard({ onAgain, onHome }: { onAgain: () => void; onHome: () =
         <div className="font-display font-bold text-3xl text-plum mt-2">{praise.ta}</div>
         <div className="text-plum/60 font-semibold mt-1">ஒரு சுற்று முடிந்தது · one round done</div>
         <div className="mt-6 flex flex-col gap-3">
-          {!expired ? (
+          {/* when the session's time is up, rest is the only way on */}
+          {!expired && (
             <>
               <button className="btn-chunky bg-sun" onClick={onAgain} aria-label="again">
                 <span className="text-2xl leading-none" aria-hidden>
                   ↻
                 </span>
-                <span>
-                  <span className="block leading-tight">மீண்டும்</span>
-                  <span className="block text-[11px] font-semibold opacity-60 leading-tight">
-                    again
-                  </span>
-                </span>
+                <BiLabel ta="மீண்டும்" en="again" />
               </button>
               <button className="btn-chunky" onClick={onHome} aria-label="home">
                 <HomeGlyph />
-                <span>
-                  <span className="block leading-tight">வீடு</span>
-                  <span className="block text-[11px] font-semibold opacity-60 leading-tight">
-                    all games
-                  </span>
-                </span>
-              </button>
-              <button className="btn-chunky bg-mint" onClick={goRest} aria-label="rest">
-                <span className="w-9 h-9 -my-1" aria-hidden>
-                  <Art id="moon" size={36} />
-                </span>
-                <span>
-                  <span className="block leading-tight">ஓய்வு</span>
-                  <span className="block text-[11px] font-semibold opacity-60 leading-tight">
-                    rest
-                  </span>
-                </span>
+                <BiLabel ta="வீடு" en="all games" />
               </button>
             </>
-          ) : (
-            <button className="btn-chunky bg-mint" onClick={goRest} aria-label="rest time">
-              <span className="w-9 h-9 -my-1" aria-hidden>
-                <Art id="moon" size={36} />
-              </span>
-              <span>
-                <span className="block leading-tight">ஓய்வு நேரம்</span>
-                <span className="block text-[11px] font-semibold opacity-60 leading-tight">
-                  rest time
-                </span>
-              </span>
-            </button>
           )}
+          <button
+            className="btn-chunky bg-mint"
+            onClick={goRest}
+            aria-label={expired ? 'rest time' : 'rest'}
+          >
+            <span className="w-9 h-9 -my-1" aria-hidden>
+              <Art id="moon" size={36} />
+            </span>
+            <BiLabel ta={expired ? 'ஓய்வு நேரம்' : 'ஓய்வு'} en={expired ? 'rest time' : 'rest'} />
+          </button>
         </div>
       </div>
     </div>

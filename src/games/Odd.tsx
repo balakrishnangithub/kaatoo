@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
-import { ART, Art, type ArtId } from '../art';
-import { COLORS, SHAPES, WORDS } from '../data/content';
-import { chimeGood, chimeSoft, speak } from '../lib/speech';
-import { useStore } from '../lib/store';
+import { useRef, useState } from 'react';
+import { Art, type ArtId } from '../art';
+import { CATEGORIES, COLORS, SHAPES, WORDS, type Category } from '../data/content';
+import { chimeGood, speak } from '../lib/speech';
 import { EndCard, GameShell } from '../components/chrome';
-import { sample } from '../lib/util';
+import { pick, sample, shuffle } from '../lib/util';
+import { useFlash } from '../hooks/useFlash';
+import { useFrozenLevel } from '../hooks/useFrozenLevel';
 import { useInstruction } from '../hooks/useInstruction';
+import { useRounds } from '../hooks/useRounds';
 import { GuideHand } from '../components/hint';
 
 /*
@@ -25,31 +27,35 @@ interface Tile {
   key: string;
   art: ArtId;
   fill?: string;
+  /** the tile to tap — the different one, or at level 0 the one matching the model */
   odd: boolean;
   ta: string;
 }
 
 interface RoundData {
   tiles: Tile[];
-  model: { art: ArtId; fill?: string; ta: string } | null; // level 0 only
+  model: { art: ArtId; ta: string } | null; // level 0 only
   promptTa: string;
   promptEn: string;
 }
 
+const wordsIn = (cat: Category) => WORDS.filter((w) => w.cat === cat);
+/** two different categories: the one most tiles share, and the odd tile's */
+const twoKinds = () => sample(CATEGORIES, 2).map((c) => c.id);
+
 function build(level: number): RoundData {
   if (level === 0) {
     // find the same as the model
-    const target = sample(WORDS, 1)[0];
+    const target = pick(WORDS);
     const distractors = sample(
       WORDS.filter((w) => w.cat !== target.cat),
       2,
     );
-    const tiles: Tile[] = [
-      { key: 'match', art: target.art, odd: true, ta: target.ta },
-      ...distractors.map((w, i) => ({ key: `d${i}`, art: w.art, odd: false, ta: w.ta })),
-    ];
     return {
-      tiles: sample(tiles, 3),
+      tiles: shuffle([
+        { key: 'match', art: target.art, odd: true, ta: target.ta },
+        ...distractors.map((w, i) => ({ key: `d${i}`, art: w.art, odd: false, ta: w.ta })),
+      ]),
       model: { art: target.art, ta: target.ta },
       promptTa: 'இதே மாதிரி எது?',
       promptEn: 'find the same one',
@@ -57,27 +63,15 @@ function build(level: number): RoundData {
   }
   if (level === 1) {
     // two identical + one from another world
-    const cats = ['animal', 'food', 'thing', 'nature'] as const;
-    const oddCat = sample([...cats], 1)[0];
-    const sameCat = sample(
-      cats.filter((c) => c !== oddCat),
-      1,
-    )[0];
-    const sameW = sample(
-      WORDS.filter((w) => w.cat === sameCat),
-      1,
-    )[0];
-    const oddW = sample(
-      WORDS.filter((w) => w.cat === oddCat),
-      1,
-    )[0];
-    const tiles: Tile[] = [
-      { key: 'a', art: sameW.art, odd: false, ta: sameW.ta },
-      { key: 'b', art: sameW.art, odd: false, ta: sameW.ta },
-      { key: 'odd', art: oddW.art, odd: true, ta: oddW.ta },
-    ];
+    const [sameKind, oddKind] = twoKinds();
+    const same = pick(wordsIn(sameKind));
+    const odd = pick(wordsIn(oddKind));
     return {
-      tiles: sample(tiles, 3),
+      tiles: shuffle([
+        { key: 'a', art: same.art, odd: false, ta: same.ta },
+        { key: 'b', art: same.art, odd: false, ta: same.ta },
+        { key: 'odd', art: odd.art, odd: true, ta: odd.ta },
+      ]),
       model: null,
       promptTa: 'வேறு எது?',
       promptEn: 'which one is different?',
@@ -85,50 +79,37 @@ function build(level: number): RoundData {
   }
   if (level === 2) {
     // same shape, one a different color
-    const shape = sample(SHAPES, 1)[0];
-    const colors = sample(COLORS, 2);
-    const tiles: Tile[] = [0, 1, 2].map((i) => ({
-      key: `s${i}`,
-      art: shape.id,
-      fill: colors[0].hex,
-      odd: false,
-      ta: colors[0].ta,
-    }));
-    tiles.splice(Math.floor(Math.random() * 4), 0, {
-      key: 'odd',
-      art: shape.id,
-      fill: colors[1].hex,
-      odd: true,
-      ta: colors[1].ta,
-    });
+    const shape = pick(SHAPES);
+    const [base, other] = sample(COLORS, 2);
     return {
-      tiles,
+      tiles: shuffle([
+        ...[0, 1, 2].map((i) => ({
+          key: `s${i}`,
+          art: shape.id,
+          fill: base.hex,
+          odd: false,
+          ta: base.ta,
+        })),
+        { key: 'odd', art: shape.id, fill: other.hex, odd: true, ta: other.ta },
+      ]),
       model: null,
       promptTa: 'வேறு நிறம் எது?',
       promptEn: 'which color is different?',
     };
   }
   // level 3: same broad kind, one different category, all different pictures
-  const cats = ['animal', 'food', 'thing', 'nature'] as const;
-  const oddCat = sample([...cats], 1)[0];
-  const sameCat = sample(
-    cats.filter((c) => c !== oddCat),
-    1,
-  )[0];
-  const same = sample(
-    WORDS.filter((w) => w.cat === sameCat),
-    3,
-  );
-  const odd = sample(
-    WORDS.filter((w) => w.cat === oddCat),
-    1,
-  )[0];
-  const tiles: Tile[] = [
-    ...same.map((w) => ({ key: w.art, art: w.art, odd: false, ta: w.ta })),
-    { key: odd.art, art: odd.art, odd: true, ta: odd.ta },
-  ];
+  const [sameKind, oddKind] = twoKinds();
+  const odd = pick(wordsIn(oddKind));
   return {
-    tiles: sample(tiles, 4),
+    tiles: shuffle([
+      ...sample(wordsIn(sameKind), 3).map((w) => ({
+        key: w.art,
+        art: w.art,
+        odd: false,
+        ta: w.ta,
+      })),
+      { key: odd.art, art: odd.art, odd: true, ta: odd.ta },
+    ]),
     model: null,
     promptTa: 'யார் வேறுபட்டவர்?',
     promptEn: 'who does not belong?',
@@ -136,127 +117,80 @@ function build(level: number): RoundData {
 }
 
 export default function Odd({ onHome }: { onHome: () => void }) {
-  const { levelFor, recordWin, recordOutcome } = useStore();
-  // Freeze the difficulty for the whole sitting (same fix as sizes). levelFor
-  // reads live progress, so a level change on her correct tap re-dealt the
-  // round MID-question — the match-model vanished or appeared by itself, and
-  // the spoken prompt no longer matched the screen ("find the same" with no
-  // reference image). Snapshot once at mount; the new level applies next visit.
-  const [level] = useState(() => levelFor('odd', 3));
-  const [round, setRound] = useState(0);
-  const [data, setData] = useState<RoundData>(() => build(level));
-  const [wrong, setWrong] = useState<string | null>(null);
-  const missesRef = useRef(0);
-  const [misses, setMisses] = useState(0);
-  const [demoPair, setDemoPair] = useState(false); // level 1: the identical pair pulses together
-  const [ended, setEnded] = useState(false);
-  const done = ended || round >= ROUNDS;
-
-  useEffect(() => {
-    setData(build(level));
-    setMisses(0);
-    missesRef.current = 0;
-    setDemoPair(false);
-  }, [round, level]);
-
-  const d = data;
-  useInstruction(d.promptTa, d.promptEn, [round], !done);
-
+  const level = useFrozenLevel('odd', 3);
+  const [data, setData] = useState(() => build(level));
+  const { round, done, solved, misses, miss, solve, restart } = useRounds('odd', ROUNDS, () =>
+    setData(build(level)),
+  );
+  const [wrong, flashWrong] = useFlash<string>();
+  const layerRef = useRef<HTMLDivElement>(null);
+  const optRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const target = data.tiles.find((t) => t.odd);
   // after two misses at the salient level, the identical pair pulses together —
   // showing sameness is the clue, instead of pointing at the answer outright
-  useEffect(() => {
-    if (level === 1 && misses >= 2) {
-      setDemoPair(true);
-      const sameTa = d.tiles.find((t) => !t.odd)?.ta;
-      if (sameTa) speak(`${sameTa}, ${sameTa} — இவை ஒன்னு!`, 'ta');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [misses]);
+  const demoPair = level === 1 && misses >= 2;
+
+  useInstruction(data.promptTa, data.promptEn, [round], !done);
 
   const choose = (t: Tile) => {
+    if (solved) return;
     if (t.odd) {
       chimeGood();
       speak('சரி! ' + t.ta, 'ta');
-      recordOutcome('odd', missesRef.current === 0);
-      window.setTimeout(() => {
-        // last round: end here — no phantom question behind the end card
-        if (round + 1 >= ROUNDS) {
-          recordWin('odd');
-          setEnded(true);
-        } else {
-          setRound((r) => r + 1);
-        }
-      }, 750);
+      solve(750);
     } else {
-      chimeSoft();
-      setWrong(t.key);
-      missesRef.current += 1;
-      setMisses((m) => m + 1);
-      window.setTimeout(() => setWrong(null), 450);
+      miss();
+      flashWrong(t.key);
+      // …and the voice names the pair along with the pulse
+      if (level === 1 && misses + 1 >= 2) speak(`${t.ta}, ${t.ta} — இவை ஒன்னு!`, 'ta');
     }
   };
-
-  const cols = d.tiles.length <= 3 ? 3 : 2;
-  const layerRef = useRef<HTMLDivElement>(null);
-  const optRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const targetTile = d.tiles.find((t) => t.odd);
 
   return (
     <div className="relative h-full">
       <GameShell ta="யார் வேறு?" en="same & different" art="lion" onHome={onHome} tint="#F5CAC3">
         <div ref={layerRef} className="relative grow flex flex-col min-h-0">
           <GuideHand
-            target={() => (targetTile ? (optRefs.current[targetTile.key] ?? null) : null)}
+            target={() => (target ? (optRefs.current[target.key] ?? null) : null)}
             layerRef={layerRef}
             guideKey="odd"
-            active={!done && d.tiles.length > 0}
+            active={!solved && !done}
             fireSignal={misses}
           />
           {/* level 0: the model to match */}
-          {d.model && (
+          {data.model && (
             <div className="flex flex-col items-center gap-1 py-1">
               <button
                 className="sticker p-3 anim-pop active:scale-95 transition-transform"
-                onClick={() => speak(d.model!.ta, 'ta')}
-                aria-label={d.model.ta}
+                onClick={() => speak(data.model!.ta, 'ta')}
+                aria-label={data.model.ta}
               >
-                <Art id={d.model.art} size={Math.min(120, window.innerWidth * 0.28)} />
+                <Art id={data.model.art} size={Math.min(120, window.innerWidth * 0.28)} />
               </button>
-              <div className="font-display font-bold text-plum text-lg">{d.promptTa}</div>
+              <div className="font-display font-bold text-plum text-lg">{data.promptTa}</div>
             </div>
           )}
           <div
-            className={`relative grid ${cols === 3 ? 'grid-cols-3' : 'grid-cols-2 max-w-sm'} gap-3 grow content-center w-full max-w-md mx-auto`}
+            className={`relative grid ${data.tiles.length <= 3 ? 'grid-cols-3 max-w-md' : 'grid-cols-2 max-w-sm'} gap-3 grow content-center w-full mx-auto`}
           >
-            {d.tiles.map((t) => {
-              const C = ART[t.art] as React.ComponentType<{ size?: number; fill?: string }>;
-              return (
-                <button
-                  key={t.key}
-                  ref={(el) => {
-                    optRefs.current[t.key] = el;
-                  }}
-                  onClick={() => choose(t)}
-                  className={`sticker aspect-square p-3 flex items-center justify-center transition-transform active:scale-95 ${wrong === t.key ? 'anim-wiggle' : ''} ${
-                    demoPair && !t.odd ? 'anim-hint' : ''
-                  }`}
-                >
-                  <C size={92} fill={t.fill} />
-                </button>
-              );
-            })}
+            {data.tiles.map((t) => (
+              <button
+                key={t.key}
+                ref={(el) => {
+                  optRefs.current[t.key] = el;
+                }}
+                onClick={() => choose(t)}
+                className={`sticker aspect-square p-3 flex items-center justify-center transition-transform active:scale-95 ${wrong === t.key ? 'anim-wiggle' : ''} ${
+                  demoPair && !t.odd ? 'anim-hint' : ''
+                }`}
+              >
+                <Art id={t.art} size={92} fill={t.fill} />
+              </button>
+            ))}
           </div>
         </div>
       </GameShell>
-      {done && (
-        <EndCard
-          onAgain={() => {
-            setEnded(false);
-            setRound(0);
-          }}
-          onHome={onHome}
-        />
-      )}
+      {done && <EndCard onAgain={restart} onHome={onHome} />}
     </div>
   );
 }

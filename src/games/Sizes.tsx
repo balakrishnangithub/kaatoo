@@ -1,12 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Art } from '../art';
 import { WORDS, type WordCard } from '../data/content';
-import { chimeGood, chimeSoft, speak } from '../lib/speech';
-import { fitSizes, sizesFor, staircaseSlots } from '../lib/seriation';
-import { useStore } from '../lib/store';
+import { chimeGood, speak } from '../lib/speech';
+import { fitSizes, sizesFor, slotGapFor, staircaseSlots } from '../lib/seriation';
 import { EndCard, GameShell } from '../components/chrome';
-import { sample } from '../lib/util';
+import { pick, shuffle } from '../lib/util';
+import { useElementSize } from '../hooks/useElementSize';
+import { useFlash } from '../hooks/useFlash';
+import { useFrozenLevel } from '../hooks/useFrozenLevel';
 import { useInstruction } from '../hooks/useInstruction';
+import { useRounds } from '../hooks/useRounds';
+import { useTimers } from '../hooks/useTimers';
 import { GuideHand } from '../components/hint';
 
 /* seriation: tap items from biggest to smallest — a core early-math skill.
@@ -23,72 +27,37 @@ const ROW_GAP = 26; // vertical gap between the dealt row and the answer line
 // → hold 600 → row drifts out 700. Total after final tap ≈ 2500.
 const T = { growIn: 500, glide: 600, bounce: 600, hold: 600, exit: 700 };
 
-interface It {
-  id: number; // rank: 0 = biggest
-  size: number;
+interface Board {
+  word: WordCard;
+  /** the dealt row, left to right, as size ranks (0 = biggest) */
+  order: number[];
+}
+
+function deal(level: number): Board {
+  return { word: pick(WORDS), order: shuffle(sizesFor(level).map((_, rank) => rank)) };
 }
 
 /** placed-then-happy → exiting → gone */
 type Phase = 'play' | 'celebrate' | 'exit';
 
 export default function Sizes({ onHome }: { onHome: () => void }) {
-  const { levelFor, recordWin, recordOutcome } = useStore();
-  const [round, setRound] = useState(0);
-  const [word, setWord] = useState<WordCard>(() => sample(WORDS, 1)[0]);
-  const [items, setItems] = useState<It[]>([]);
+  const level = useFrozenLevel('sizes', 2);
+  const [board, setBoard] = useState(() => deal(level));
   const [nextRank, setNextRank] = useState(0); // 0 = biggest
-  const [wrong, setWrong] = useState<number | null>(null);
-  const [misses, setMisses] = useState(0);
-  const [ended, setEnded] = useState(false);
   const [phase, setPhase] = useState<Phase>('play');
+  const { round, done, misses, miss, solve, restart } = useRounds('sizes', ROUNDS, () => {
+    setBoard(deal(level));
+    setNextRank(0);
+    setPhase('play');
+  });
+  const [wrong, flashWrong] = useFlash<number>();
+  const { later, clearAll } = useTimers();
   const layerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Record<number, HTMLButtonElement | null>>({});
-  const timersRef = useRef<number[]>([]); // every timeout we arm — restart/unmount disarms all
-  const epochRef = useRef(0); // increments on restart — stale closures die with their epoch
-  const done = ended || round >= ROUNDS;
-
-  // Freeze the difficulty for the whole sitting. levelFor reads live store
-  // state, so a level-up would otherwise retrigger the round effect MID-play
-  // (level is a dep) and silently re-deal a bigger round — the "items changed
-  // by themselves" bug. Snapshot once at mount; the new level applies next visit.
-  const [level] = useState(() => levelFor('sizes', 2));
+  const { word, order } = board;
 
   // measured field — artwork sizes adapt so the row never overflows
-  const [fieldW, setFieldW] = useState(0);
-  useEffect(() => {
-    const el = layerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setFieldW(el.clientWidth));
-    ro.observe(el);
-    setFieldW(el.clientWidth);
-    return () => ro.disconnect();
-  }, []);
-
-  /** Every timeout goes through here so a reset can disarm the whole batch. */
-  const later = (fn: () => void, ms: number) => {
-    const t = window.setTimeout(fn, ms);
-    timersRef.current.push(t);
-  };
-  const disarmAll = () => {
-    for (const t of timersRef.current) window.clearTimeout(t);
-    timersRef.current = [];
-  };
-  useEffect(() => disarmAll, []); // unmount: nothing fires into a dead screen
-
-  useEffect(() => {
-    const sizes = sizesFor(level);
-    setWord(sample(WORDS, 1)[0]);
-    setItems(
-      sizes
-        .map((s, rank) => ({ id: rank, size: s, sort: Math.random() }))
-        .sort((a, b) => a.sort - b.sort)
-        .map(({ id, size }) => ({ id, size })),
-    );
-    setNextRank(0);
-    setMisses(0);
-    setWrong(null);
-    setPhase('play');
-  }, [round, level]);
+  const fieldW = useElementSize(layerRef).w;
 
   useInstruction(
     'பெரியதிலிருந்து சிறியது வரை தொடு',
@@ -103,88 +72,53 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
   // button is as wide as its artwork is tall, so without a real corridor a
   // neighbour swallows taps.
   const fitted = fitSizes(sizesFor(level), fieldW || 360);
-  const n = fitted.sizes.length;
-  const slotGap = n <= 3 ? 12 : n === 4 ? 16 : 20;
+  const slotGap = slotGapFor(fitted.sizes.length);
   const stairSlots = staircaseSlots(fitted.sizes, slotGap);
   const slots = staircaseSlots(
-    items.map((it) => fitted.sizes[it.id]),
+    order.map((rank) => fitted.sizes[rank]),
     slotGap,
   );
   const totalW = slots.length ? slots[slots.length - 1].x + slots[slots.length - 1].size / 2 : 0;
   // two bands: dealt row (height = biggest item) + gap + answer line below
   const rowH = fitted.sizes[0] * 2 + ROW_GAP;
 
-  // items carry id === rank (0 biggest)
-  const tap = (it: It) => {
+  const tap = (rank: number) => {
     if (done || phase !== 'play') return; // celebrating / leaving — no ghost timers
-    if (it.id < nextRank) return; // already placed
-    const el = itemRefs.current[it.id];
-    if (it.id === nextRank) {
-      chimeGood();
-      speak(
-        nextRank === 0 ? 'பெரியது!' : nextRank === items.length - 1 ? 'சிறியது!' : 'சரி!',
-        'ta',
-      );
-      // The tapped item — and ONLY the tapped item — glides down into its
-      // slot in the answer line (first-tried items on the left, in the order
-      // she picked them). Nothing else ever moves: the rearrange-by-itself
-      // was the confusion. Her hand is the only thing that changes the picture.
-      if (el) {
-        const s = fitted.sizes[it.id];
-        const startLeft = el.offsetLeft;
-        const startTop = el.offsetTop;
-        const slotLeft = stairSlots[it.id].x - s / 2;
-        const slotTop = rowH - s;
-        el.style.left = `${slotLeft}px`;
-        el.style.top = `${slotTop}px`;
-        el.style.transform = `translate(${startLeft - slotLeft}px, ${startTop - slotTop}px)`;
+    if (rank < nextRank) return; // already placed
+    if (rank !== nextRank) {
+      miss();
+      flashWrong(rank);
+      return;
+    }
+    chimeGood();
+    speak(nextRank === 0 ? 'பெரியது!' : nextRank === order.length - 1 ? 'சிறியது!' : 'சரி!', 'ta');
+    // The tapped item — and ONLY the tapped item — glides down into its
+    // slot in the answer line (first-tried items on the left, in the order
+    // she picked them). Nothing else ever moves: the rearrange-by-itself
+    // was the confusion. Her hand is the only thing that changes the picture.
+    const el = itemRefs.current[rank];
+    if (el) {
+      const s = fitted.sizes[rank];
+      const startLeft = el.offsetLeft;
+      const startTop = el.offsetTop;
+      const slotLeft = stairSlots[rank].x - s / 2;
+      const slotTop = rowH - s;
+      el.style.left = `${slotLeft}px`;
+      el.style.top = `${slotTop}px`;
+      el.style.transform = `translate(${startLeft - slotLeft}px, ${startTop - slotTop}px)`;
+      requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            el.style.transition = `transform ${T.glide}ms cubic-bezier(0.3, 0.9, 0.3, 1.1)`;
-            el.style.transform = '';
-          });
+          el.style.transition = `transform ${T.glide}ms cubic-bezier(0.3, 0.9, 0.3, 1.1)`;
+          el.style.transform = '';
         });
-      }
-      const nr = nextRank + 1;
-      setNextRank(nr);
-      if (nr >= items.length) {
-        recordOutcome('sizes', misses === 0);
-        const epoch = epochRef.current;
-        // staircase complete → it bounces once, holds, then leaves as one object
-        later(() => {
-          if (epoch !== epochRef.current) return;
-          setPhase('celebrate');
-        }, T.glide + 80);
-        later(
-          () => {
-            if (epoch !== epochRef.current) return;
-            setPhase('exit');
-          },
-          T.glide + T.bounce + T.hold,
-        );
-        later(
-          () => {
-            if (epoch !== epochRef.current) return;
-            // last round: end here — no phantom question behind the end card
-            if (round + 1 >= ROUNDS) {
-              recordWin('sizes');
-              setEnded(true);
-            } else {
-              setRound((r) => r + 1);
-            }
-          },
-          T.glide + T.bounce + T.hold + T.exit + 80,
-        );
-      }
-    } else {
-      chimeSoft();
-      setWrong(it.id);
-      setMisses((m) => m + 1);
-      const epoch = epochRef.current;
-      later(() => {
-        if (epoch !== epochRef.current) return;
-        setWrong(null);
-      }, 450);
+      });
+    }
+    setNextRank(nextRank + 1);
+    if (nextRank + 1 >= order.length) {
+      // staircase complete → it bounces once, holds, then leaves as one object
+      later(() => setPhase('celebrate'), T.glide + 80);
+      later(() => setPhase('exit'), T.glide + T.bounce + T.hold);
+      solve(T.glide + T.bounce + T.hold + T.exit + 80);
     }
   };
 
@@ -207,7 +141,7 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
             target={() => itemRefs.current[nextRank] ?? null}
             layerRef={layerRef}
             guideKey="sizes"
-            active={phase === 'play' && items.length > 0 && nextRank < items.length && !done}
+            active={phase === 'play' && nextRank < order.length && !done}
           />
           {/* centred with flexbox, NOT a transform — the celebration
               animations animate transform, and any transform-based
@@ -218,31 +152,37 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
               className={`${phase === 'celebrate' ? 'anim-happy' : ''} ${phase === 'exit' ? 'anim-row-exit' : ''}`}
             >
               <div className="relative mx-auto" style={{ width: totalW, height: rowH }}>
-                {items.map((it, idx) => {
-                  const placed = it.id < nextRank;
-                  const s = fitted.sizes[it.id] ?? it.size;
+                {order.map((rank, idx) => {
+                  const placed = rank < nextRank;
+                  const s = fitted.sizes[rank];
                   // dealt row on top (never rearranges) → answer line below;
                   // the bands never overlap, so nothing can cover a live item
-                  const slot = placed ? stairSlots[it.id] : slots[idx];
+                  const slot = placed ? stairSlots[rank] : slots[idx];
                   return (
                     <button
-                      key={`${round}-${it.id}`}
+                      key={`${round}-${rank}`}
                       ref={(el) => {
-                        itemRefs.current[it.id] = el;
+                        itemRefs.current[rank] = el;
                       }}
-                      onClick={() => tap(it)}
+                      onClick={() => tap(rank)}
                       disabled={placed || phase !== 'play'}
-                      className={`absolute ${phase === 'play' && !placed ? 'anim-pop' : ''} ${wrong === it.id ? 'anim-wiggle' : ''} ${phase === 'play' && !placed && misses >= 2 && it.id === nextRank ? 'anim-hint rounded-3xl' : ''}`}
+                      className={`absolute ${wrong === rank ? 'anim-wiggle' : ''} ${phase === 'play' && !placed && misses >= 2 && rank === nextRank ? 'anim-hint rounded-3xl' : ''}`}
                       style={{
                         left: slot.x - s / 2,
                         top: placed ? rowH - s : fitted.sizes[0] - s,
-                        animationDelay:
-                          phase === 'play' && !placed ? `${entranceDelay(idx)}ms` : undefined,
                         zIndex: placed ? 1 : 0,
                       }}
-                      aria-label={`size ${it.id}`}
+                      aria-label={`size ${rank}`}
                     >
-                      <Art id={word.art} size={s} />
+                      {/* the entrance pop lives on the artwork, not the button:
+                          a wiggle or hint on the button then never replays it,
+                          and it cannot fight the glide's transform */}
+                      <span
+                        className="block anim-pop"
+                        style={{ animationDelay: `${entranceDelay(idx)}ms` }}
+                      >
+                        <Art id={word.art} size={s} />
+                      </span>
                     </button>
                   );
                 })}
@@ -254,10 +194,8 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
       {done && (
         <EndCard
           onAgain={() => {
-            epochRef.current += 1; // kill every pending round-advance/celebration timer…
-            disarmAll(); // …so the fresh game is never auto-advanced by the old one
-            setEnded(false);
-            setRound(0);
+            clearAll(); // no celebration timer of the old game may touch the fresh one
+            restart();
           }}
           onHome={onHome}
         />

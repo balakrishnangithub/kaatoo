@@ -105,6 +105,24 @@ describe('Odd one out — the vanishing model (live-level regression)', () => {
     expect(container.textContent).toContain('இதே மாதிரி எது?');
   });
 
+  it('a double-tap on the right tile counts once and skips no round', async () => {
+    seed([]);
+    const { container } = renderGame();
+    const correct = matchingTile(container)!;
+    fireEvent.click(correct);
+    fireEvent.click(correct); // excited toddler — both taps used to score and advance
+    await flush(800);
+    const saved = JSON.parse(localStorage.getItem('kaatoo-v1') || '{}');
+    expect(saved.progress.odd.outcomes).toEqual([1]);
+    // four more rounds are still to be played: the game is not over early
+    for (let round = 1; round < 5; round++) {
+      expect(container.querySelector('[aria-label="again"]')).toBeNull();
+      fireEvent.click(matchingTile(container)!);
+      await flush(800);
+    }
+    expect(container.querySelector('[aria-label="again"]')).toBeTruthy();
+  });
+
   it('a wrong tap never re-deals either — it wiggles and the round stays', async () => {
     seed([]);
     const { container } = renderGame();

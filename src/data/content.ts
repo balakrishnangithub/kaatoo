@@ -47,11 +47,14 @@ export const SHAPES: ShapeDef[] = [
 ];
 
 /* ---------------- words ---------------- */
+export type Category = 'animal' | 'food' | 'thing' | 'nature';
 export interface WordCard {
   art: ArtId;
   ta: string;
   en: string;
-  cat: 'animal' | 'food' | 'thing' | 'nature';
+  cat: Category;
+  /** English [one, many] for counting aloud, where "one X, three Xs" would be wrong */
+  counting?: [one: string, many: string];
 }
 export const WORDS: WordCard[] = [
   { art: 'cat', ta: 'பூனை', en: 'cat', cat: 'animal' },
@@ -59,18 +62,24 @@ export const WORDS: WordCard[] = [
   { art: 'cow', ta: 'மாடு', en: 'cow', cat: 'animal' },
   { art: 'elephant', ta: 'யானை', en: 'elephant', cat: 'animal' },
   { art: 'bird', ta: 'பறவை', en: 'bird', cat: 'animal' },
-  { art: 'fish', ta: 'மீன்', en: 'fish', cat: 'animal' },
+  { art: 'fish', ta: 'மீன்', en: 'fish', cat: 'animal', counting: ['fish', 'fish'] },
   { art: 'lion', ta: 'சிங்கம்', en: 'lion', cat: 'animal' },
   { art: 'rabbit', ta: 'முயல்', en: 'rabbit', cat: 'animal' },
   { art: 'apple', ta: 'ஆப்பிள்', en: 'apple', cat: 'food' },
   { art: 'banana', ta: 'வாழைப்பழம்', en: 'banana', cat: 'food' },
-  { art: 'mango', ta: 'மாம்பழம்', en: 'mango', cat: 'food' },
-  { art: 'grapes', ta: 'திராட்சை', en: 'grapes', cat: 'food' },
+  { art: 'mango', ta: 'மாம்பழம்', en: 'mango', cat: 'food', counting: ['mango', 'mangoes'] },
+  {
+    art: 'grapes',
+    ta: 'திராட்சை',
+    en: 'grapes',
+    cat: 'food',
+    counting: ['bunch of grapes', 'bunches of grapes'],
+  },
   { art: 'orange', ta: 'ஆரஞ்சு', en: 'orange', cat: 'food' },
   { art: 'carrot', ta: 'கேரட்', en: 'carrot', cat: 'food' },
   { art: 'ball', ta: 'பந்து', en: 'ball', cat: 'thing' },
   { art: 'car', ta: 'கார்', en: 'car', cat: 'thing' },
-  { art: 'bus', ta: 'பஸ்', en: 'bus', cat: 'thing' },
+  { art: 'bus', ta: 'பஸ்', en: 'bus', cat: 'thing', counting: ['bus', 'buses'] },
   { art: 'book', ta: 'புத்தகம்', en: 'book', cat: 'thing' },
   { art: 'cup', ta: 'கோப்பை', en: 'cup', cat: 'thing' },
   { art: 'shoe', ta: 'காலணி', en: 'shoe', cat: 'thing' },
@@ -85,52 +94,66 @@ export const WORDS: WordCard[] = [
   { art: 'house', ta: 'வீடு', en: 'house', cat: 'nature' },
 ];
 
-export const CATEGORIES = [
-  { id: 'animal', ta: 'விலங்குகள்', en: 'animals', art: 'cat' as ArtId, bg: '#F5CAC3' },
-  { id: 'food', ta: 'உணவு', en: 'food', art: 'mango' as ArtId, bg: '#FFCE80' },
-  { id: 'thing', ta: 'பொருட்கள்', en: 'things', art: 'ball' as ArtId, bg: '#A9D6E5' },
-  { id: 'nature', ta: 'இயற்கை', en: 'nature', art: 'tree' as ArtId, bg: '#B7E4C7' },
+export interface CategoryDef {
+  id: Category;
+  ta: string;
+  en: string;
+  art: ArtId;
+  bg: string;
+}
+export const CATEGORIES: CategoryDef[] = [
+  { id: 'animal', ta: 'விலங்குகள்', en: 'animals', art: 'cat', bg: '#F5CAC3' },
+  { id: 'food', ta: 'உணவு', en: 'food', art: 'mango', bg: '#FFCE80' },
+  { id: 'thing', ta: 'பொருட்கள்', en: 'things', art: 'ball', bg: '#A9D6E5' },
+  { id: 'nature', ta: 'இயற்கை', en: 'nature', art: 'tree', bg: '#B7E4C7' },
 ];
 
 /* ---------------- emotions ---------------- */
-export const EMOTIONS = [
+export interface EmotionDef {
+  art: ArtId;
+  ta: string;
+  en: string;
+  line: string;
+  lineEn: string;
+}
+export const EMOTIONS: EmotionDef[] = [
   {
-    art: 'face_happy' as ArtId,
+    art: 'face_happy',
     ta: 'சந்தோஷம்',
     en: 'happy',
     line: 'நண்பர்களுடன் விளையாடும்போது சந்தோஷம்',
     lineEn: 'happy when we play together',
   },
   {
-    art: 'face_sad' as ArtId,
+    art: 'face_sad',
     ta: 'சோகம்',
     en: 'sad',
     line: 'பொம்மை உடைந்தால் சோகம் வரும்',
     lineEn: 'sad when a toy breaks',
   },
   {
-    art: 'face_angry' as ArtId,
+    art: 'face_angry',
     ta: 'கோபம்',
     en: 'angry',
     line: 'கோபம் வந்தால் மூச்சை மெதுவாக விடு',
     lineEn: 'when angry, breathe slowly',
   },
   {
-    art: 'face_surprised' as ArtId,
+    art: 'face_surprised',
     ta: 'ஆச்சரியம்',
     en: 'surprised',
     line: 'புதிய விஷயம் கண்டால் ஆச்சரியம்',
     lineEn: 'surprised by something new',
   },
   {
-    art: 'face_sleepy' as ArtId,
+    art: 'face_sleepy',
     ta: 'தூக்கம்',
     en: 'sleepy',
     line: 'தூக்கம் வந்தால் ஓய்வு எடு',
     lineEn: 'sleepy means time to rest',
   },
   {
-    art: 'face_calm' as ArtId,
+    art: 'face_calm',
     ta: 'அமைதி',
     en: 'calm',
     line: 'மெதுவாக மூச்சு விட்டால் அமைதி',
@@ -147,7 +170,10 @@ export interface ActivityDef {
   bg: string;
   blurb: string;
 }
-export const ACTIVITIES: ActivityDef[] = [
+/* `as const` keeps each id literal, so GameId below is derived from this list:
+   adding an activity here is what creates its id, and the compiler then insists
+   it gets a screen (the GAMES map in App.tsx). */
+export const ACTIVITIES = [
   {
     id: 'draw',
     ta: 'வரையலாம்',
@@ -228,7 +254,10 @@ export const ACTIVITIES: ActivityDef[] = [
     bg: '#CDB4DB',
     blurb: 'name the feeling',
   },
-];
+] as const satisfies readonly ActivityDef[];
+
+/** every game's id — the key for its progress, its guiding hand, and its screen */
+export type GameId = (typeof ACTIVITIES)[number]['id'];
 
 /* ---------------- offline play ideas (wind-down) ---------------- */
 export const OFFLINE_IDEAS = [
@@ -522,19 +551,24 @@ export const MILESTONES: MilestoneBand[] = [
 ];
 
 /* ---------------- praise ---------------- */
-export const PRAISE_TA = ['மிக நன்று!', 'அருமை!', 'சூப்பர்!', 'சரியாகச் செய்தாய்!', 'அழகு!'];
-export const PRAISE_EN = ['Good job!', 'Well done!', 'Lovely!', 'You did it!'];
+/* a Tamil line with the English that echoes it — kept as one pair so the echo
+   always says the same thing as the Tamil it follows */
+export interface Phrase {
+  ta: string;
+  en: string;
+}
+export const PRAISE: Phrase[] = [
+  { ta: 'மிக நன்று!', en: 'Good job!' },
+  { ta: 'அருமை!', en: 'Well done!' },
+  { ta: 'சூப்பர்!', en: 'Super!' },
+  { ta: 'சரியாகச் செய்தாய்!', en: 'You did it!' },
+  { ta: 'அழகு!', en: 'Lovely!' },
+];
 export const TRY_TA = 'மீண்டும் முயற்சி செய்';
 /* process praise (Gunderson et al. 2013): praise the effort, not the child — builds persistence */
-export const PRAISE_EFFORT_TA = [
-  'நல்ல முயற்சி!',
-  'முயற்சி செய்தாய், அருமை!',
-  'நீயே வரைந்தாய்!',
-  'ஓடுகிறது, தொடர்!',
-];
-export const PRAISE_EFFORT_EN = [
-  'Good effort!',
-  'You kept trying — lovely!',
-  'You traced it yourself!',
-  'It is moving, keep going!',
+export const PRAISE_EFFORT: Phrase[] = [
+  { ta: 'நல்ல முயற்சி!', en: 'Good effort!' },
+  { ta: 'முயற்சி செய்தாய், அருமை!', en: 'You kept trying — lovely!' },
+  { ta: 'நீயே வரைந்தாய்!', en: 'You traced it yourself!' },
+  { ta: 'ஓடுகிறது, தொடர்!', en: 'It is moving, keep going!' },
 ];

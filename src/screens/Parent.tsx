@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ACTIVITIES, MILESTONES } from '../data/content';
-import { useStore } from '../lib/store';
-import { ageYears } from '../lib/age';
+import { SESSION_MINUTES, useStore } from '../lib/store';
+import { isoDate, stageFromAge } from '../lib/age';
 import { HoldButton } from '../components/chrome';
 import { Art } from '../art';
 
@@ -34,10 +34,7 @@ export default function Parent({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div
-      className="h-full flex flex-col"
-      style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
-    >
+    <div className="h-full flex flex-col safe-top">
       <div className="flex items-center gap-3 px-4 sm:px-6 shrink-0">
         <button className="btn-chunky !min-h-11 !px-4" onClick={onBack}>
           ←
@@ -94,7 +91,6 @@ function Settings() {
           value={s.settings.name}
           onChange={(e) => s.updateSettings({ name: e.target.value })}
           className="w-full rounded-2xl border-3 border-plum/20 bg-white px-4 py-3 font-display font-bold text-xl text-plum outline-none focus:border-sage"
-          style={{ borderWidth: 3 }}
           maxLength={20}
         />
       </Row>
@@ -102,9 +98,9 @@ function Settings() {
         <input
           type="date"
           value={s.settings.birth}
+          max={isoDate(new Date())}
           onChange={(e) => s.updateSettings({ birth: e.target.value })}
-          className="w-full rounded-2xl border-plum/20 bg-white px-4 py-3 font-semibold text-lg text-plum outline-none focus:border-sage"
-          style={{ borderWidth: 3 }}
+          className="w-full rounded-2xl border-3 border-plum/20 bg-white px-4 py-3 font-semibold text-lg text-plum outline-none focus:border-sage"
         />
         <div className="text-sm text-plum/60 font-semibold mt-1">
           {s.ageText} — activities auto-adjust as she grows
@@ -116,8 +112,7 @@ function Settings() {
             className={`btn-chunky !min-h-10 !px-3 text-sm ${auto ? 'bg-sage text-white' : ''}`}
             onClick={() => s.updateSettings({ stageOverride: null })}
           >
-            auto (
-            {STAGE_LABELS[Math.min(3, Math.max(0, Math.floor(ageYears(s.settings.birth)) - 2))]})
+            auto ({STAGE_LABELS[stageFromAge(s.settings.birth)]})
           </button>
           {STAGE_LABELS.map((l, i) => (
             <button
@@ -135,10 +130,10 @@ function Settings() {
       </Row>
       <Row label="அமர்வு நேரம் · session length">
         <div className="flex gap-2">
-          {[5, 10, 15, 20].map((m) => (
+          {SESSION_MINUTES.map((m) => (
             <button
               key={m}
-              className={`btn-chunky flex-1 !min-h-11 ${s.settings.sessionMin === m ? 'bg-sun' : ''}`}
+              className={`btn-chunky flex-1 !min-h-11 !px-0 ${s.settings.sessionMin === m ? 'bg-sun' : ''}`}
               onClick={() => s.updateSettings({ sessionMin: m })}
             >
               {m}m
@@ -179,11 +174,13 @@ function Settings() {
         <div className="text-sm text-plum/60 font-semibold mt-2 space-y-1.5">
           <p>
             A little hand points at the <b>centre of the exact thing to tap</b> — but only when she
-            pauses. It is adaptive, so she won&apos;t grow dependent on it:
+            needs it: right after a wrong try, or in free play when she pauses. It is adaptive, so
+            she won&apos;t grow dependent on it:
           </p>
           <ul className="list-disc ml-5 space-y-1">
             <li>
-              The more she has played a game, the <b>longer it waits</b> before appearing.
+              In free play, the more she has played a game, the <b>longer it waits</b> before
+              appearing.
             </li>
             <li>
               After ~4 plays of a game it <b>stops appearing at all</b> there.
@@ -205,7 +202,7 @@ function Settings() {
       <Row label="முழுத்திரை + குழந்தை பாதுகாப்பு · fullscreen & child-safe">
         <ol className="list-decimal ml-5 text-sm font-semibold text-plum/75 space-y-1.5 leading-relaxed">
           <li>
-            Publish this site, then on your S23 Ultra open it in Chrome →{' '}
+            On your Android phone or tablet, open this site in Chrome →{' '}
             <b>⋮ → Add to Home screen</b>. It launches as a true fullscreen app (no address bar, no
             pull-to-refresh, no pinch-zoom).
           </li>
@@ -215,8 +212,8 @@ function Settings() {
             page at all.
           </li>
           <li>
-            Optional: enable Samsung <b>Edge touch / grip suppression</b> so her palm doesn&apos;t
-            trigger touches while she holds the phone.
+            Optional, on Samsung devices: enable <b>Edge touch / grip suppression</b> so her palm
+            doesn&apos;t trigger touches while she holds the phone.
           </li>
         </ol>
       </Row>

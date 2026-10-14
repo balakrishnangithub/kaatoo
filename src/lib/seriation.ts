@@ -11,6 +11,16 @@ export function sizesFor(level: number): number[] {
 }
 
 /**
+ * Minimum gap between neighbouring item buttons, by item count. Fewer items
+ * are bigger, so they can sit closer; five small ones need a wider corridor
+ * or a neighbour swallows the tap. One definition: the fit below reserves this
+ * room, and the game lays its slots out with it.
+ */
+export function slotGapFor(count: number): number {
+  return count <= 3 ? 12 : count === 4 ? 16 : 20;
+}
+
+/**
  * Shrink the row to fit the field. Level sets the ideal artwork sizes; this
  * caps them (and the gaps) so the whole row always fits inside the measured
  * field — 5 items on a 360px phone included. Seriation (strictly descending
@@ -32,10 +42,10 @@ export function fitSizes(sizes: number[], fieldWidth: number): { sizes: number[]
 
   // 2) shrink gaps to 8px, scale artwork down (never up) toward the budget
   const gap = 8;
-  // headroom: the game later packs slots with a wider per-count button gap
-  // (12/16/20) — the scale step must leave room for that or the packed row
-  // would outgrow the field
-  const slotGap = n <= 3 ? 12 : n === 4 ? 16 : 20;
+  // headroom: the game later packs slots with the wider per-count button gap
+  // — the scale step must leave room for that or the packed row would outgrow
+  // the field
+  const slotGap = slotGapFor(n);
   const scale = Math.min(1, (budget - slotGap * (n - 1)) / sum);
   const scaled = sizes.map((s) => Math.round(s * scale));
 

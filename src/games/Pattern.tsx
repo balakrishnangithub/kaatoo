@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { ART, type ArtId } from '../art';
+import { Art, type ArtId } from '../art';
 import { COLORS, SHAPES } from '../data/content';
-import { chimeGood, chimeSoft, speak, speakSeq } from '../lib/speech';
-import { useStore } from '../lib/store';
+import { chimeGood, speak, speakSeq } from '../lib/speech';
 import { EndCard, GameShell } from '../components/chrome';
-import { sample, shuffle } from '../lib/util';
+import { pick, shuffle } from '../lib/util';
+import { useFlash } from '../hooks/useFlash';
+import { useFrozenLevel } from '../hooks/useFrozenLevel';
 import { useInstruction } from '../hooks/useInstruction';
+import { useRounds } from '../hooks/useRounds';
 import { GuideHand } from '../components/hint';
 
 /*
@@ -32,8 +34,8 @@ interface El {
 }
 
 function makeEl(): El {
-  const s = sample(SHAPES, 1)[0];
-  const c = sample(COLORS, 1)[0];
+  const s = pick(SHAPES);
+  const c = pick(COLORS);
   return { art: s.id, fill: c.hex, key: `${s.id}-${c.id}`, labelTa: `${c.ta} ${s.ta}` };
 }
 
@@ -45,6 +47,7 @@ interface Data {
 }
 
 function build(level: number): Data {
+  // three elements that all look different: the pattern's units, and a spare decoy
   const A = makeEl();
   let B = makeEl();
   while (B.key === A.key) B = makeEl();
@@ -58,45 +61,25 @@ function build(level: number): Data {
 
   const shown: El[] = [];
   while (shown.length < 5) shown.push(...unit);
-
-  if (level === 0) {
-    const seq = shown.slice(0, 4);
-    return { mode: 'copy', seq, options: shuffle([A, B]) };
-  }
   const seq = shown.slice(0, 4);
-  const answer = shown[4];
-  const distract = new Set<El>([A, B, C].filter((e) => e.key !== answer.key));
-  while (distract.size < 2) {
-    const d = makeEl();
-    if (d.key !== answer.key) distract.add(d);
-  }
-  return { mode: 'extend', seq, answer, options: shuffle([answer, ...distract]) };
+
+  if (level === 0) return { mode: 'copy', seq, options: shuffle([A, B]) };
+  // the answer plus the two of A/B/C it is not
+  return { mode: 'extend', seq, answer: shown[4], options: shuffle([A, B, C]) };
 }
 
 export default function Pattern({ onHome }: { onHome: () => void }) {
-  const { levelFor, recordWin, recordOutcome } = useStore();
-  const level = levelFor('pattern', 3);
-  const [round, setRound] = useState(0);
-  const [ended, setEnded] = useState(false);
+  const level = useFrozenLevel('pattern', 3);
   const [data, setData] = useState(() => build(level));
-  const [wrong, setWrong] = useState<string | null>(null);
-  const [misses, setMisses] = useState(0);
-  const [solved, setSolved] = useState(false);
   const [filled, setFilled] = useState<El[]>([]); // copy mode: what she built
   const [spokenIdx, setSpokenIdx] = useState(-1); // which tile the voice is naming right now
-  const missesRef = useRef(0);
+  const { round, done, solved, misses, miss, solve, restart } = useRounds('pattern', ROUNDS, () => {
+    setData(build(level));
+    setFilled([]);
+  });
+  const [wrong, flashWrong] = useFlash<string>();
   const layerRef = useRef<HTMLDivElement>(null);
   const optRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const done = ended || round >= ROUNDS;
-
-  useEffect(() => {
-    setData(build(level));
-    setSolved(false);
-    setMisses(0);
-    missesRef.current = 0;
-    setFilled([]);
-    optRefs.current = [];
-  }, [round, level]);
 
   useInstruction(
     data.mode === 'copy' ? 'இதே மாதிரி கீழே போடு' : 'அடுத்தது என்ன?',
@@ -113,7 +96,7 @@ export default function Pattern({ onHome }: { onHome: () => void }) {
     setSpokenIdx(-1);
     // full label — she hears the shape AND its colour, not just a colour word
     const labels = data.seq.map((e) => e.labelTa);
-    const cancel = speakSeq(labels, 'ta', {
+    return speakSeq(labels, 'ta', {
       onStep: (i) => setSpokenIdx(i),
       onDone: () => {
         if (data.mode === 'extend') {
@@ -124,50 +107,30 @@ export default function Pattern({ onHome }: { onHome: () => void }) {
         }
       },
     });
-    return cancel;
-  }, [round, data, done, solved]);
+  }, [data, done, solved]);
 
   // which option is currently correct (extend: the answer; copy: matches next empty slot)
   const expectedKey = data.mode === 'extend' ? data.answer?.key : data.seq[filled.length]?.key;
   const answerIdx = data.options.findIndex((o) => o.key === expectedKey);
 
-  const finishRound = () => {
-    recordOutcome('pattern', missesRef.current === 0);
-    window.setTimeout(() => {
-      // last round: end right here — don't advance into a phantom question
-      // behind the end card (its instruction would talk over the praise)
-      if (round + 1 >= ROUNDS) {
-        recordWin('pattern');
-        setEnded(true);
-      } else {
-        setRound((r) => r + 1);
-      }
-    }, 900);
-  };
-
   const choose = (el: El, key: string) => {
     if (solved) return;
-    if (el.key === expectedKey) {
-      chimeGood();
-      if (data.mode === 'copy') {
-        const f = [...filled, el];
-        setFilled(f);
-        if (f.length >= data.seq.length) {
-          setSolved(true);
-          speak('சரி! அதே முறை!', 'ta');
-          finishRound();
-        }
-      } else {
-        setSolved(true);
-        speak('சரி!', 'ta');
-        finishRound();
-      }
-    } else {
-      chimeSoft();
-      setWrong(key);
-      missesRef.current += 1;
-      setMisses((m) => m + 1);
-      window.setTimeout(() => setWrong(null), 450);
+    if (el.key !== expectedKey) {
+      miss();
+      flashWrong(key);
+      return;
+    }
+    chimeGood();
+    if (data.mode === 'extend') {
+      speak('சரி!', 'ta');
+      solve(900);
+      return;
+    }
+    const built = [...filled, el];
+    setFilled(built);
+    if (built.length >= data.seq.length) {
+      speak('சரி! அதே முறை!', 'ta');
+      solve(900);
     }
   };
 
@@ -179,7 +142,7 @@ export default function Pattern({ onHome }: { onHome: () => void }) {
             target={() => optRefs.current[answerIdx] ?? null}
             layerRef={layerRef}
             guideKey="pattern"
-            active={!solved && !done && data.options.length > 0}
+            active={!solved && !done}
             fireSignal={misses}
           />
           {/* sequence strip — a tile lights exactly while the voice names it */}
@@ -189,7 +152,7 @@ export default function Pattern({ onHome }: { onHome: () => void }) {
                 key={i}
                 className={`shrink-0 rounded-2xl transition-all duration-150 ${spokenIdx === i ? 'scale-125 drop-shadow-[0_0_10px_rgba(255,183,77,0.9)]' : ''}`}
               >
-                <TileIn el={el} size={52} />
+                <Art id={el.art} fill={el.fill} size={52} />
               </div>
             ))}
             {data.mode === 'extend' && (
@@ -199,7 +162,11 @@ export default function Pattern({ onHome }: { onHome: () => void }) {
                 } ${spokenIdx === data.seq.length ? 'scale-125 border-salmon text-salmon' : ''}`}
                 style={{ width: 66, height: 66 }}
               >
-                {solved && data.answer ? <TileIn el={data.answer} size={46} /> : '?'}
+                {solved && data.answer ? (
+                  <Art id={data.answer.art} fill={data.answer.fill} size={46} />
+                ) : (
+                  '?'
+                )}
               </div>
             )}
           </div>
@@ -218,7 +185,7 @@ export default function Pattern({ onHome }: { onHome: () => void }) {
                   }`}
                   style={{ width: 60, height: 60 }}
                 >
-                  {filled[i] && <TileIn el={filled[i]} size={44} />}
+                  {filled[i] && <Art id={filled[i].art} fill={filled[i].fill} size={44} />}
                 </div>
               ))}
             </div>
@@ -236,26 +203,13 @@ export default function Pattern({ onHome }: { onHome: () => void }) {
                   wrong === el.key + i ? 'anim-wiggle' : ''
                 } ${misses >= 2 && el.key === expectedKey && !solved ? 'anim-hint' : ''}`}
               >
-                <TileIn el={el} size={84} />
+                <Art id={el.art} fill={el.fill} size={84} />
               </button>
             ))}
           </div>
         </div>
       </GameShell>
-      {done && (
-        <EndCard
-          onAgain={() => {
-            setEnded(false);
-            setRound(0);
-          }}
-          onHome={onHome}
-        />
-      )}
+      {done && <EndCard onAgain={restart} onHome={onHome} />}
     </div>
   );
-}
-
-function TileIn({ el, size }: { el: El; size: number }) {
-  const C = ART[el.art] as React.ComponentType<{ size?: number; fill?: string }>;
-  return <C size={size} fill={el.fill} />;
 }

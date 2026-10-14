@@ -1,0 +1,7 @@
+# LF everywhere, on every platform. Without this, a Windows checkout with
+# core.autocrlf=true gets CRLF files and `npm run format:check` (Prettier,
+# endOfLine: lf) fails locally while CI stays green.
+* text=auto eol=lf
+
+*.png binary
+*.woff2 binary

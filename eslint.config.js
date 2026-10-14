@@ -20,10 +20,12 @@ export default defineConfig([
       globals: globals.browser,
     },
     rules: {
-      // Games reset a whole round's state inside `useEffect(() => { … }, [round])`.
-      // That is the app's deliberate round architecture: each reset is idempotent,
-      // keyed off the round counter, and cannot cascade — so this React Compiler
-      // strictness rule would only force awkward workarounds here.
+      // A handful of effects set state on purpose, in step with something
+      // outside React: the session clock running out, the voice starting a new
+      // line, the guiding hand's target going away. Each is a one-shot sync
+      // that cannot cascade — so this React Compiler strictness rule would only
+      // force awkward workarounds here. (Rounds are NOT dealt in effects: that
+      // is useRounds' job, in the same update as the round change.)
       'react-hooks/set-state-in-effect': 'off',
     },
   },

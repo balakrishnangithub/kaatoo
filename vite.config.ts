@@ -1,9 +1,8 @@
 /// <reference types="vitest/config" />
 import { execSync } from 'node:child_process';
-import path from 'path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
-import { swAssetsManifest } from './src/swAssetsManifest';
+import { serviceWorkerBuild } from './vite-plugin-sw';
 
 // short commit id stamped into the footer, so a screen recording always shows
 // exactly which build is running (offline app + CDN caches make "did I get the
@@ -32,14 +31,9 @@ export default defineConfig({
       return { relative: true };
     },
   },
-  plugins: [react(), swAssetsManifest()],
+  plugins: [react(), serviceWorkerBuild()],
   server: {
     port: 3000,
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
   },
   test: {
     environment: 'jsdom',

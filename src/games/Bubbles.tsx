@@ -5,7 +5,10 @@ import { chimePop, speak } from '../lib/speech';
 import { useStore } from '../lib/store';
 import { EndCard, GameShell } from '../components/chrome';
 import { HAND_FONT, pick } from '../lib/util';
+import { useElementSize } from '../hooks/useElementSize';
+import { useFrozenLevel } from '../hooks/useFrozenLevel';
 import { useInstruction } from '../hooks/useInstruction';
+import { useTimers } from '../hooks/useTimers';
 import { GuideHand } from '../components/hint';
 
 const TOTAL = 12;
@@ -30,8 +33,11 @@ interface B {
 }
 
 export default function Bubbles({ onHome }: { onHome: () => void }) {
-  const { levelFor, recordWin, recordOutcome } = useStore();
-  const level = levelFor('bubbles', 3);
+  const { recordWin, recordOutcome } = useStore();
+  // frozen for the sitting: the last bubble of a round is what records the
+  // outcome, and a level that changed right then used to restart the spawn
+  // effect below — disarming the timer that shows the end card, for good
+  const level = useFrozenLevel('bubbles', 3);
   const [bubbles, setBubbles] = useState<B[]>([]);
   const [resolved, setResolved] = useState(0); // popped OR floated away
   const [done, setDone] = useState(false);
@@ -39,22 +45,15 @@ export default function Bubbles({ onHome }: { onHome: () => void }) {
   const spawnedRef = useRef(0);
   const liveRef = useRef(0); // bubbles currently on screen — spawn cap source of truth
   const roundRef = useRef(0); // increments on restart — stale closures die with their round
-  const timersRef = useRef<number[]>([]); // every timeout we arm, so restart can disarm all
+  // every timeout goes through `later`, so restart() can disarm the whole round
+  const { later, clearAll } = useTimers();
   const resolvedIds = useRef<Set<number>>(new Set());
   const poppedCount = useRef(0);
   const layerRef = useRef<HTMLDivElement>(null);
   const leadBubbleRef = useRef<HTMLButtonElement>(null);
   // measured field height — the drift distance adapts to any screen size, so a
   // bubble is resolved the moment it has fully floated out of view
-  const [fieldH, setFieldH] = useState(0);
-  useEffect(() => {
-    const el = layerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setFieldH(el.clientHeight));
-    ro.observe(el);
-    setFieldH(el.clientHeight);
-    return () => ro.disconnect();
-  }, []);
+  const fieldH = useElementSize(layerRef).h;
 
   useInstruction('குமிழிகளைத் தொட்டு உடை', 'pop the bubbles');
 
@@ -78,16 +77,6 @@ export default function Bubbles({ onHome }: { onHome: () => void }) {
     const n = pick(NUMBERS.slice(0, lv === 2 ? 5 : 10));
     return { ...base, tint: '#ffffff', num: n.n, label: n.ta };
   }
-
-  /** Every timeout goes through here so restart() can disarm the whole round. */
-  const later = (fn: () => void, ms: number) => {
-    const t = window.setTimeout(fn, ms);
-    timersRef.current.push(t);
-  };
-  const disarmAll = () => {
-    for (const t of timersRef.current) window.clearTimeout(t);
-    timersRef.current = [];
-  };
 
   /** Every bubble resolves exactly once — popped or escaped — so the round ALWAYS ends.
    *  Round-tagged: a timer/animation from a previous round is dead on arrival. */
@@ -144,16 +133,14 @@ export default function Bubbles({ onHome }: { onHome: () => void }) {
       },
       FAST ? 500 : 1300,
     );
-    return () => {
-      window.clearInterval(id);
-      disarmAll(); // leaving the screen disarms every pending timer
-    };
+    // (the round's pending timers are disarmed by useTimers when she leaves)
+    return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [level]);
+  }, []);
 
   const restart = () => {
     roundRef.current += 1; // kill every stale closure from the old round…
-    disarmAll(); // …and its timers, so nothing outlives the reset
+    clearAll(); // …and its timers, so nothing outlives the reset
     spawnedRef.current = 0;
     liveRef.current = 0;
     poppedCount.current = 0;

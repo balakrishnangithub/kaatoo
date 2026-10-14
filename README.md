@@ -70,7 +70,7 @@ Plain and boring on purpose — easy to read, easy to host, easy to maintain:
   device's own Tamil voice, fully offline
 - **Canvas + pointer events** for the drawing board; a small custom stroke
   classifier (`src/lib/trace.ts`) judges tracings — no ML model, no network
-- Zero runtime dependencies beyond `react`, `react-dom`, `react-router`
+- Zero runtime dependencies beyond `react` and `react-dom`
 
 ## Getting started
 
@@ -99,26 +99,40 @@ src/
 ├── App.tsx               screen switch: home / parent / the ten games
 ├── App.test.tsx          boots-and-renders smoke tests
 ├── main.tsx              entry point
+├── registerSW.ts         registers the offline service worker (production only)
 ├── index.css             fonts, theme tokens, shared animations
 ├── art/                  hand-drawn SVG artwork (shapes, world objects)
 ├── components/
 │   ├── chrome.tsx        HoldButton · GameShell · EndCard — the shared frame
-│   └── hint.tsx          GuideHand (adaptive hints) · SwipeableCard · PicLabel
+│   ├── hint.tsx          GuideHand (adaptive hints) · SwipeableCard
+│   └── lookfind.tsx      the "look, then find" activity behind Words and Emotions
 ├── data/
 │   ├── content.ts        every Tamil word, colour, shape, number, praise phrase
 │   └── content.test.ts   integrity guard: every card points at artwork that exists
 ├── games/                the ten activities — one file each
 ├── hooks/
+│   ├── useRounds.ts      the round lifecycle every tap-choice game shares
+│   ├── useFrozenLevel.ts difficulty level, read once per sitting
+│   ├── useTimers.ts      timeouts that cannot outlive the screen
+│   ├── useFlash.ts       a value that clears itself (the wrong-tap wiggle)
+│   ├── useGuide.ts       how much help she still gets (the adaptive fade)
+│   ├── useElementSize.ts a play field measuring itself
 │   └── useInstruction.ts spoken instruction line for a game
 ├── lib/
 │   ├── age.ts            age → developmental stage
 │   ├── store.tsx         settings, progress, session timer (localStorage only)
 │   ├── speech.ts         Tamil-first speech, chimes, sequenced utterances
 │   ├── trace.ts          stroke/shape/glyph classifier for the drawing game
+│   ├── seriation.ts      big-to-small layout maths for the sizes game
 │   ├── util.ts           shuffle / pick / sample + the handwriting font stack
 │   └── *.test.ts(x)      unit tests for the logic above
 ├── screens/              Home · Onboarding · Parent dashboard · WindDown
-└── test/setup.ts         jsdom stubs (speech, matchMedia, canvas…)
+└── test/
+    ├── setup.ts          jsdom stubs (speech, matchMedia, canvas…)
+    └── helpers.tsx       shared test helpers (seeded profile, fake speech queue…)
+
+public/sw.js              the service worker (offline-first)
+vite-plugin-sw.ts         stamps each build's fingerprint + file list into it
 ```
 
 ## Privacy

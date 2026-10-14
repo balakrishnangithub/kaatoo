@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { Art, ART, type ArtId } from '../art';
-import { COLORS, SHAPES, WORDS, type WordCard } from '../data/content';
-import { chimeGood, chimeSoft, speak } from '../lib/speech';
-import { useStore } from '../lib/store';
+import { Art, type ArtId } from '../art';
+import { COLORS, SHAPES, WORDS } from '../data/content';
+import { chimeGood, speak } from '../lib/speech';
 import { EndCard, GameShell } from '../components/chrome';
 import { sample, shuffle } from '../lib/util';
+import { useFlash } from '../hooks/useFlash';
+import { useFrozenLevel } from '../hooks/useFrozenLevel';
 import { useInstruction } from '../hooks/useInstruction';
+import { useRounds } from '../hooks/useRounds';
 import { GuideHand } from '../components/hint';
 
 /*
- levels: 0 = sort 2 colors · 1 = sort 3 colors · 2 = sort 2-3 shapes · 3 = animals vs food
+ levels: 0 = sort 2 colors · 1 = sort 3 colors · 2 = sort 2 shapes · 3 = animals vs food
  tap an item, then tap its basket — two-tap sorting suits small fingers
 */
 interface Item {
@@ -18,7 +20,6 @@ interface Item {
   fill?: string;
   bin: string;
   label: string; // full spoken name — "சிவப்பு வட்டம்", never just the colour
-  word?: WordCard;
 }
 interface Bin {
   id: string;
@@ -27,6 +28,7 @@ interface Bin {
   art?: ArtId;
 }
 
+const ROUNDS = 3;
 const ROUND_ITEMS = 6;
 
 function buildRound(level: number): {
@@ -37,7 +39,7 @@ function buildRound(level: number): {
 } {
   if (level <= 1) {
     const colors = sample(COLORS, level === 0 ? 2 : 3);
-    const shapes = sample(SHAPES, 6);
+    const shapes = sample(SHAPES, ROUND_ITEMS);
     const items: Item[] = Array.from({ length: ROUND_ITEMS }, (_, i) => {
       const c = colors[i % colors.length];
       return {
@@ -78,8 +80,8 @@ function buildRound(level: number): {
     3,
   );
   const items: Item[] = shuffle([
-    ...animals.map((w) => ({ key: w.art, art: w.art, bin: 'animal', label: w.ta, word: w })),
-    ...foods.map((w) => ({ key: w.art, art: w.art, bin: 'food', label: w.ta, word: w })),
+    ...animals.map((w) => ({ key: w.art, art: w.art, bin: 'animal', label: w.ta })),
+    ...foods.map((w) => ({ key: w.art, art: w.art, bin: 'food', label: w.ta })),
   ]);
   return {
     items,
@@ -93,14 +95,18 @@ function buildRound(level: number): {
 }
 
 export default function Sort({ onHome }: { onHome: () => void }) {
-  const { levelFor, recordWin, recordOutcome } = useStore();
-  const level = levelFor('sort', 3);
-  const [round, setRound] = useState(0);
+  const level = useFrozenLevel('sort', 3);
   const [data, setData] = useState(() => buildRound(level));
   const [placed, setPlaced] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [wrongBin, setWrongBin] = useState<string | null>(null);
-  const [misses, setMisses] = useState(0);
+  // a wrong basket counts for the whole round — it drives both the skill
+  // signal and the corrective guide hand
+  const { round, done, solved, misses, miss, solve, restart } = useRounds('sort', ROUNDS, () => {
+    setData(buildRound(level));
+    setPlaced([]);
+    setSelected(null);
+  });
+  const [wrongBin, flashWrongBin] = useFlash<string>();
   // drag state: pointer down starts a potential drag; movement turns it real
   const [drag, setDrag] = useState<{ key: string; x: number; y: number } | null>(null);
   const pressRef = useRef<{ key: string; x: number; y: number } | null>(null);
@@ -108,24 +114,12 @@ export default function Sort({ onHome }: { onHome: () => void }) {
   const dragPos = useRef<{ key: string; x: number; y: number } | null>(null);
   const dragRaf = useRef(0);
   useEffect(() => () => cancelAnimationFrame(dragRaf.current), []);
-  const [ended, setEnded] = useState(false);
-  const done = ended || round >= 3;
-  // wrong-bin count for the whole round — drives both the skill signal and the corrective guide hand
-  const missesRef = useRef(0);
-
-  useEffect(() => {
-    const d = buildRound(level);
-    setData(d);
-    setPlaced([]);
-    setSelected(null);
-    setMisses(0);
-    missesRef.current = 0;
-  }, [round, level]);
 
   useInstruction(data.prompt, data.promptEn, [round], !done);
 
   const remaining = data.items.filter((it) => !placed.includes(it.key));
   const selItem = data.items.find((i) => i.key === selected) ?? null;
+  const dragItem = data.items.find((i) => i.key === drag?.key) ?? null;
 
   // guide targets: an item to pick, or — once picked — its correct basket.
   // resolved lazily at fire time so freshly mounted buttons are never stale.
@@ -140,41 +134,22 @@ export default function Sort({ onHome }: { onHome: () => void }) {
         : null;
 
   const place = (item: Item, bin: Bin) => {
-    if (item.bin === bin.id) {
-      chimeGood();
-      speak(item.label, 'ta');
-      setPlaced((p) => [...p, item.key]);
-      setSelected(null);
-      if (placed.length + 1 >= data.items.length) {
-        recordOutcome('sort', missesRef.current === 0);
-        window.setTimeout(() => {
-          // last round: end here — no phantom question behind the end card
-          if (round + 1 >= 3) {
-            recordWin('sort');
-            setEnded(true);
-          } else {
-            setRound((r) => r + 1);
-          }
-        }, 650);
-      }
-    } else {
-      chimeSoft();
-      setWrongBin(bin.id);
-      missesRef.current += 1;
-      setMisses((m) => m + 1);
-      window.setTimeout(() => setWrongBin(null), 450);
+    if (solved) return;
+    if (item.bin !== bin.id) {
+      miss();
+      flashWrongBin(bin.id);
+      return;
     }
+    chimeGood();
+    speak(item.label, 'ta');
+    setPlaced((p) => [...p, item.key]);
+    setSelected(null);
+    if (placed.length + 1 >= data.items.length) solve(650);
   };
 
   const tapBin = (bin: Bin) => {
-    if (!selected) {
-      speak(bin.label, 'ta');
-      return;
-    }
-    place(
-      data.items.find((i) => i.key === selected)!,
-      bin,
-    );
+    if (selItem) place(selItem, bin);
+    else speak(bin.label, 'ta');
   };
 
   /* real drag-and-drop (deliberate, deeper processing per touchscreen studies) —
@@ -202,18 +177,21 @@ export default function Sort({ onHome }: { onHome: () => void }) {
       }
     }
   };
-  const itemUp = (e: React.PointerEvent, it: Item) => {
-    const p = pressRef.current;
+  /** the finger is off the item: no frame may still be waiting to redraw the ghost */
+  const endDrag = () => {
     pressRef.current = null;
-    if (p && draggedRef.current) {
+    dragPos.current = null;
+    setDrag(null);
+  };
+  const itemUp = (e: React.PointerEvent, it: Item) => {
+    const wasDrag = pressRef.current !== null && draggedRef.current;
+    endDrag();
+    if (wasDrag) {
       // dropped: find the basket under the finger
-      setDrag(null);
       const el = document.elementFromPoint(e.clientX, e.clientY);
       const binEl = el?.closest('[data-bin]');
-      if (binEl) {
-        const bin = data.bins.find((b) => b.id === binEl.getAttribute('data-bin'));
-        if (bin) place(it, bin);
-      }
+      const bin = data.bins.find((b) => b.id === binEl?.getAttribute('data-bin'));
+      if (bin) place(it, bin);
       return;
     }
     // a simple tap: select / deselect (the tap-tap path)
@@ -264,7 +242,7 @@ export default function Sort({ onHome }: { onHome: () => void }) {
                     .map((i) => (
                       <div key={i.key} className="anim-pop">
                         {/* placed items keep their own colour — the colour IS the lesson */}
-                        <ColoredArt id={i.art} fill={i.fill} size={24} />
+                        <Art id={i.art} fill={i.fill} size={24} />
                       </div>
                     ))}
                 </div>
@@ -284,48 +262,33 @@ export default function Sort({ onHome }: { onHome: () => void }) {
                   onPointerDown={(e) => itemDown(e, it.key)}
                   onPointerMove={itemMove}
                   onPointerUp={(e) => itemUp(e, it)}
-                  onPointerCancel={() => {
-                    pressRef.current = null;
-                    setDrag(null);
-                  }}
+                  onPointerCancel={endDrag}
                   className={`sticker aspect-square p-2 flex items-center justify-center transition-all active:scale-95 ${
                     selected === it.key ? 'ring-4 ring-sage -translate-y-2' : ''
                   } ${drag?.key === it.key ? 'opacity-30' : ''}`}
                   style={{ touchAction: 'none' }}
                 >
-                  <ColoredArt id={it.art} fill={it.fill} />
+                  <Art id={it.art} fill={it.fill} size={76} />
                 </button>
               ))}
             </div>
           </div>
-          {/* dragged item ghost follows the finger in real time */}
-          {drag && (
+          {/* dragged item ghost follows the finger in real time. The pop-in sits
+              on an inner element: on the ghost itself its keyframes would
+              override the transform that centres it under the finger. */}
+          {drag && dragItem && (
             <div
-              className="fixed pointer-events-none z-50 anim-pop"
+              className="fixed pointer-events-none z-50"
               style={{ left: drag.x, top: drag.y, transform: 'translate(-50%,-60%) scale(1.1)' }}
             >
-              {(() => {
-                const it = data.items.find((i) => i.key === drag.key);
-                return it ? <ColoredArt id={it.art} fill={it.fill} /> : null;
-              })()}
+              <div className="anim-pop">
+                <Art id={dragItem.art} fill={dragItem.fill} size={76} />
+              </div>
             </div>
           )}
         </div>
       </GameShell>
-      {done && (
-        <EndCard
-          onAgain={() => {
-            setEnded(false);
-            setRound(0);
-          }}
-          onHome={onHome}
-        />
-      )}
+      {done && <EndCard onAgain={restart} onHome={onHome} />}
     </div>
   );
-}
-
-function ColoredArt({ id, fill, size = 76 }: { id: ArtId; fill?: string; size?: number }) {
-  const C = ART[id] as React.ComponentType<{ size?: number; fill?: string }>;
-  return <C size={size} fill={fill} />;
 }

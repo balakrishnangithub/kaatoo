@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Art, type ArtId } from '../art';
-import { COLORS, NUMBERS, PRAISE_EFFORT_EN, PRAISE_EFFORT_TA, SHAPES } from '../data/content';
+import { COLORS, NUMBERS, PRAISE_EFFORT, SHAPES } from '../data/content';
 import { chimeGood, chimeSoft, chimeTap, speak, speakPair } from '../lib/speech';
-import { judgeStroke, judgeGlyph, type Pt } from '../lib/trace';
+import { judgeStroke, judgeGlyph, type GuideBox, type Pt } from '../lib/trace';
 import { useStore } from '../lib/store';
 import { EndCard, GameShell } from '../components/chrome';
-import { HAND_FONT } from '../lib/util';
+import { HAND_FONT, pick } from '../lib/util';
+import { useGuide } from '../hooks/useGuide';
+import { useTimers } from '../hooks/useTimers';
 import { HandSvg } from '../components/hint';
 
 type Tool = 'draw' | ArtId;
@@ -64,7 +66,7 @@ function glyphInk(ch: string): { pts: Pt[]; bbox: { x: number; y: number; w: num
   ctx.fillStyle = '#000';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `170px 'Kavivanar', 'Andika', 'Baloo 2', 'Noto Sans Tamil', sans-serif`;
+  ctx.font = `170px ${HAND_FONT}`; // the very stack the grey guide is drawn in
   ctx.fillText(ch, 120, 126);
   const img = ctx.getImageData(0, 0, 240, 240).data;
   const pts: Pt[] = [];
@@ -116,7 +118,7 @@ function TraceDemo({
   onDone,
 }: {
   pts: Pt[];
-  box: { l: number; t: number; s: number };
+  box: GuideBox;
   loops: number;
   nonce: number;
   onDone: () => void;
@@ -180,7 +182,10 @@ function TraceDemo({
 }
 
 export default function Draw({ onHome }: { onHome: () => void }) {
-  const { timeLeft, recordWin, recordOutcome, settings, progress, stage } = useStore();
+  const { expired, recordWin, recordOutcome, settings, stage } = useStore();
+  // the demonstrating hand fades with practice, like the guiding hand elsewhere
+  const { plays, enabled: demoAllowed } = useGuide('draw');
+  const { later } = useTimers();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [tool, setTool] = useState<Tool>('draw');
@@ -194,28 +199,25 @@ export default function Draw({ onHome }: { onHome: () => void }) {
   const [celebrated, setCelebrated] = useState(false);
   const [demoOn, setDemoOn] = useState(true);
   const [demoNonce, setDemoNonce] = useState(0);
-  const templateRef = useRef<Pt[]>([]); // the shape she is invited to trace (normalized space)
   const strokesRef = useRef<Map<number, Pt[]>>(new Map()); // one stroke per finger (multi-touch)
   const scribblesRef = useRef(0); // consecutive free-scribbles this guide
 
-  const plays = progress['draw']?.plays ?? 0;
-
   // drawing has no score — but when the session timer expires we gently end
   useEffect(() => {
-    if (timeLeft <= 0) {
+    if (expired) {
       recordWin('draw');
       setDone(true);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft <= 0]);
+  }, [expired, recordWin]);
 
-  // canvas sizing (+ paper size for the guide box)
+  // canvas sizing (+ paper size for the guide box). Everything is measured from
+  // the canvas itself — the box her finger actually draws in — so strokes land
+  // under the finger whatever border or padding the paper around it has.
   useEffect(() => {
     const canvas = canvasRef.current!;
-    const wrap = wrapRef.current!;
     const fit = () => {
       const dpr = window.devicePixelRatio || 1;
-      const r = wrap.getBoundingClientRect();
+      const r = canvas.getBoundingClientRect();
       setPaper({ w: r.width, h: r.height });
       const img = canvas.width
         ? canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height)
@@ -230,7 +232,7 @@ export default function Draw({ onHome }: { onHome: () => void }) {
     };
     fit();
     const ro = new ResizeObserver(fit);
-    ro.observe(wrap);
+    ro.observe(wrapRef.current!);
     return () => ro.disconnect();
   }, []);
 
@@ -273,25 +275,27 @@ export default function Draw({ onHome }: { onHome: () => void }) {
     };
   }, []);
 
-  // trace path (demo hand) + the shape template for judging her strokes
-  const demoPts = useMemo<Pt[]>(() => {
-    if (!guideOn || paper.w === 0 || !fontsReady) return [];
-    if (guide) return samplePath(GUIDE_PATHS[guide]);
-    if (glyph) return sweepPath(glyphInk(glyph).bbox);
-    return [];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guideIdx, guideOn, paper.w, paper.h, fontsReady]);
-
-  useEffect(() => {
-    if (guide && paper.w > 0) templateRef.current = samplePath(GUIDE_PATHS[guide], 96);
-    else if (glyph) templateRef.current = glyphInk(glyph).pts;
-    scribblesRef.current = 0;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [demoPts]);
+  // What she is invited to trace, worked out once per guide: the template her
+  // strokes are judged against (normalised space) and the path the demo hand
+  // follows. Nothing to trace until the paper is laid out — and, for a glyph,
+  // until its handwriting font has arrived.
+  const laidOut = paper.w > 0;
+  const { template, demoPts } = useMemo<{ template: Pt[]; demoPts: Pt[] }>(() => {
+    if (laidOut && guide) {
+      const d = GUIDE_PATHS[guide];
+      return { template: samplePath(d, 96), demoPts: samplePath(d) };
+    }
+    if (laidOut && glyph && fontsReady) {
+      const inked = glyphInk(glyph);
+      return { template: inked.pts, demoPts: sweepPath(inked.bbox) };
+    }
+    return { template: [], demoPts: [] };
+  }, [guide, glyph, laidOut, fontsReady]);
 
   // name the guide + replay the demo when it changes
   useEffect(() => {
-    if (!guideOn) return;
+    scribblesRef.current = 0;
+    if (!guideOn || done) return; // …and never behind the end card
     if (guide) {
       const def = SHAPES.find((s) => s.id === guide);
       if (def) speakPair(def.ta, def.en, settings.english);
@@ -300,7 +304,7 @@ export default function Draw({ onHome }: { onHome: () => void }) {
       if (num) speakPair(num.ta, num.en, settings.english);
       else speak(glyph, /[அ-ஔ]/.test(glyph) ? 'ta' : 'en');
     }
-    if (settings.guide !== false && plays < 4) {
+    if (demoAllowed) {
       setDemoOn(true);
       setDemoNonce((n) => n + 1);
     }
@@ -323,9 +327,11 @@ export default function Draw({ onHome }: { onHome: () => void }) {
     chimeGood();
     recordWin('draw');
     recordOutcome('draw', true);
-    const i = Math.floor(Math.random() * PRAISE_EFFORT_TA.length);
-    speakPair(PRAISE_EFFORT_TA[i], PRAISE_EFFORT_EN[i], settings.english);
-    window.setTimeout(() => {
+    const praise = pick(PRAISE_EFFORT);
+    speakPair(praise.ta, praise.en, settings.english);
+    // through `later`: if she goes home mid-celebration, this must not fire
+    // into a canvas that no longer exists
+    later(() => {
       clear();
       setGuideIdx((g) => (g + 1) % guideCount);
       setCelebrated(false);
@@ -375,10 +381,10 @@ export default function Draw({ onHome }: { onHome: () => void }) {
     const strokePts = strokesRef.current.get(e.pointerId);
     if (!strokePts) return;
     strokesRef.current.delete(e.pointerId);
-    if (!guideOn || celebrated || done || !templateRef.current.length) return;
+    if (!guideOn || celebrated || done || !template.length) return;
     const { verdict } = glyph
-      ? judgeGlyph(strokePts, templateRef.current, box) // letters: trace-over-ink coverage
-      : judgeStroke(strokePts, templateRef.current, box); // shapes: outline match
+      ? judgeGlyph(strokePts, template, box) // letters: trace-over-ink coverage
+      : judgeStroke(strokePts, template, box); // shapes: outline match
     if (verdict === 'match') {
       complete();
     } else if (verdict === 'close') {
@@ -388,7 +394,7 @@ export default function Draw({ onHome }: { onHome: () => void }) {
       // free scribble: if she's scribbled a lot without trying the shape,
       // replay the demo once so the invitation is visible again
       scribblesRef.current += 1;
-      if (scribblesRef.current >= 6 && settings.guide !== false && plays < 4) {
+      if (scribblesRef.current >= 6 && demoAllowed) {
         scribblesRef.current = 0;
         setDemoOn(true);
         setDemoNonce((n) => n + 1);
@@ -413,7 +419,7 @@ export default function Draw({ onHome }: { onHome: () => void }) {
               {guide && <Art id={guide} size={box.s} className="opacity-[0.15]" />}
               {glyph && (
                 <span
-                  className="font-hand text-plum opacity-[0.2]"
+                  className="text-plum opacity-[0.2]"
                   style={{ fontSize: box.s * 0.92, fontFamily: HAND_FONT }}
                 >
                   {glyph}
@@ -440,17 +446,21 @@ export default function Draw({ onHome }: { onHome: () => void }) {
             onPointerUp={up}
             onPointerCancel={up}
           />
+          {/* the pop-in sits on an inner element: on the stamp itself its
+              keyframes would override the transform that centres it on her tap */}
           {stamps.map((s, i) => (
             <div
               key={i}
-              className="absolute pointer-events-none anim-pop"
+              className="absolute pointer-events-none"
               style={{
                 left: `${s.x * 100}%`,
                 top: `${s.y * 100}%`,
                 transform: 'translate(-50%,-50%)',
               }}
             >
-              <Art id={s.art} size={s.size} />
+              <div className="anim-pop">
+                <Art id={s.art} size={s.size} />
+              </div>
             </div>
           ))}
           {/* celebration: the traced picture blooms in full colour */}
@@ -460,7 +470,7 @@ export default function Draw({ onHome }: { onHome: () => void }) {
                 {guide && <Art id={guide} size={Math.min(220, box.s * 0.8)} />}
                 {glyph && (
                   <span
-                    className="font-hand text-salmon"
+                    className="text-salmon"
                     style={{ fontSize: Math.min(200, box.s * 0.78), fontFamily: HAND_FONT }}
                   >
                     {glyph}

@@ -2,6 +2,8 @@
 // Tamil-first spoken output via the device speech synthesizer; soft synthesized
 // chimes via WebAudio (no files, no ads, no loud reward sounds).
 
+type Lang = 'ta' | 'en';
+
 let voicesReady: SpeechSynthesisVoice[] = [];
 
 function refreshVoices() {
@@ -14,7 +16,7 @@ if ('speechSynthesis' in window) {
   window.speechSynthesis.onvoiceschanged = refreshVoices;
 }
 
-function pickVoice(lang: 'ta' | 'en'): SpeechSynthesisVoice | null {
+function pickVoice(lang: Lang): SpeechSynthesisVoice | null {
   if (!voicesReady.length) refreshVoices();
   const vs = voicesReady;
   const find = (fn: (v: SpeechSynthesisVoice) => boolean) => vs.find(fn) ?? null;
@@ -32,76 +34,118 @@ function pickVoice(lang: 'ta' | 'en'): SpeechSynthesisVoice | null {
   );
 }
 
-let muted = false;
-export function setMuted(m: boolean) {
-  muted = m;
-  if (m && 'speechSynthesis' in window) window.speechSynthesis.cancel();
-}
-export function isMuted() {
-  return muted;
-}
+/** One voice per language. Tamil is slower and slightly higher — friendly for toddlers. */
+const VOICE: Record<Lang, { fallback: string; rate: number }> = {
+  ta: { fallback: 'ta-IN', rate: 0.82 },
+  en: { fallback: 'en-IN', rate: 0.9 },
+};
 
-/** Speak a phrase. Tamil is slower and slightly higher — friendly for toddlers. */
-export function speak(text: string, lang: 'ta' | 'en' = 'ta') {
-  if (muted || !('speechSynthesis' in window)) return;
-  window.speechSynthesis.cancel();
+function utterance(text: string, lang: Lang): SpeechSynthesisUtterance {
   const u = new SpeechSynthesisUtterance(text);
   const voice = pickVoice(lang);
   if (voice) u.voice = voice;
-  u.lang = voice?.lang ?? (lang === 'ta' ? 'ta-IN' : 'en-US');
-  u.rate = lang === 'ta' ? 0.82 : 0.9;
+  u.lang = voice?.lang ?? VOICE[lang].fallback;
+  u.rate = VOICE[lang].rate;
   u.pitch = 1.12;
   u.volume = 0.95;
-  window.speechSynthesis.speak(u);
+  return u;
+}
+
+let muted = false;
+const canSpeak = () => !muted && 'speechSynthesis' in window;
+
+/** the speakSeq currently holding the floor — any other line takes it away */
+let activeSeq: object | null = null;
+
+/** Stop talking: drops whatever is being said and everything queued behind it. */
+export function hush() {
+  activeSeq = null;
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+}
+
+export function setMuted(m: boolean) {
+  muted = m;
+  if (m) hush();
+}
+
+export interface SpeakOptions {
+  /** wait for whatever is already being said instead of cutting it off */
+  queue?: boolean;
+}
+
+/**
+ * Speak a phrase. By default it interrupts — the newest line is the one that
+ * matters. Pass `{ queue: true }` for a line that must FOLLOW the previous one
+ * (a question after its instruction), so neither is clipped.
+ */
+export function speak(text: string, lang: Lang = 'ta', opts?: SpeakOptions) {
+  if (!canSpeak()) return;
+  if (!opts?.queue) hush();
+  window.speechSynthesis.speak(utterance(text, lang));
+}
+
+/**
+ * Tamil then English — how the app introduces English gradually. Both lines go
+ * to the synthesizer together, so a later line can never land between them.
+ */
+export function speakPair(ta: string, en: string, withEnglish: boolean, opts?: SpeakOptions) {
+  speak(ta, 'ta', opts);
+  if (withEnglish) speak(en, 'en', { queue: true });
 }
 
 /**
  * Speak a sequence of words one after another — each utterance starts ONLY
  * after the previous one fully ends (no cutting words off mid-way).
- * onStep(i) fires as word i STARTS, so visuals can highlight in perfect sync
- * with the voice. Returns a cancel function.
+ * onStep(i) fires as word i is handed to the voice, so visuals can highlight
+ * in step with it. Returns a cancel function.
  * If speech is unavailable/muted, steps still advance on a calm timer so the
  * animation keeps working silently.
+ *
+ * A sequence never talks over anyone: an interrupting speak() ends it, and
+ * cancelling it only silences its own words — never a line spoken since.
  */
 export function speakSeq(
   texts: string[],
-  lang: 'ta' | 'en',
+  lang: Lang,
   opts?: { onStep?: (i: number) => void; onDone?: () => void; gapMs?: number },
 ): () => void {
+  const me = {};
   let cancelled = false;
+  let held = false; // we have taken the floor at least once
+  let speaking = false; // one of OUR words is with the synthesizer right now
   let timer = 0;
   const gap = opts?.gapMs ?? 260;
-  const canSpeak = !muted && 'speechSynthesis' in window;
 
   const step = (i: number) => {
     if (cancelled) return;
+    if (held && activeSeq !== me) return; // someone else spoke — the lesson yields
     if (i >= texts.length) {
+      if (activeSeq === me) activeSeq = null;
       opts?.onDone?.();
       return;
     }
     opts?.onStep?.(i);
-    if (!canSpeak) {
+    if (!canSpeak()) {
       // silent mode: still walk through the items at a reading pace
       timer = window.setTimeout(() => step(i + 1), 900);
       return;
     }
-    const u = new SpeechSynthesisUtterance(texts[i]);
-    const voice = pickVoice(lang);
-    if (voice) u.voice = voice;
-    u.lang = voice?.lang ?? (lang === 'ta' ? 'ta-IN' : 'en-US');
-    u.rate = 0.82;
-    u.pitch = 1.12;
-    u.volume = 0.95;
+    activeSeq = me;
+    held = true;
+    const u = utterance(texts[i], lang);
     let advanced = false;
     const next = () => {
       if (advanced || cancelled) return;
       advanced = true;
+      speaking = false;
+      window.clearTimeout(timer);
       timer = window.setTimeout(() => step(i + 1), gap);
     };
     u.onend = next;
     u.onerror = next;
     // safety: some engines occasionally drop onend — never stall the lesson
     timer = window.setTimeout(next, 2600 + texts[i].length * 220);
+    speaking = true;
     window.speechSynthesis.speak(u);
   };
 
@@ -110,24 +154,8 @@ export function speakSeq(
   return () => {
     cancelled = true;
     window.clearTimeout(timer);
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    if (speaking && activeSeq === me) hush();
   };
-}
-
-/** Tamil then English — how the app introduces English gradually. */
-export function speakPair(ta: string, en: string, withEnglish: boolean) {
-  if (muted) return;
-  speak(ta, 'ta');
-  if (!withEnglish || !('speechSynthesis' in window)) return;
-  const u = new SpeechSynthesisUtterance(en);
-  const voice = pickVoice('en');
-  if (voice) u.voice = voice;
-  u.lang = voice?.lang ?? 'en-IN';
-  u.rate = 0.88;
-  u.pitch = 1.1;
-  window.setTimeout(() => {
-    if (!muted) window.speechSynthesis.speak(u);
-  }, 350);
 }
 
 // ---------------- gentle tones ----------------

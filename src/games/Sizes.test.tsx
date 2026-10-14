@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import Sizes from './Sizes';
-import { fitSizes, sizesFor, staircaseSlots } from '../lib/seriation';
+import { fitSizes, sizesFor, slotGapFor, staircaseSlots } from '../lib/seriation';
 import { StoreProvider } from '../lib/store';
 
 /**
@@ -110,13 +110,13 @@ describe('Sizes — responsive layout (the overflow bug)', () => {
   });
 
   it('staircase slots: one per rank, biggest on the left, real button gaps', () => {
-    // same per-count minimum the game uses — the corridor that keeps a placed
-    // big item from covering its smaller neighbour's taps
-    const gapFor = (count: number) => (count <= 3 ? 12 : count === 4 ? 16 : 20);
+    // slotGapFor is the per-count minimum the game itself lays out with — the
+    // corridor that keeps a placed big item from covering its smaller
+    // neighbour's taps
     for (const level of [0, 1, 2]) {
       for (const w of FIELDS) {
         const { sizes } = fitSizes(sizesFor(level), w);
-        const gap = gapFor(sizes.length);
+        const gap = slotGapFor(sizes.length);
         const slots = staircaseSlots(sizes, gap);
         expect(slots.length, `level ${level}`).toBe(sizes.length);
         let prevRight = -Infinity;

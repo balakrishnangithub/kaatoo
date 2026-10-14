@@ -21,6 +21,28 @@ export interface Pt {
   y: number;
 }
 
+/** the centred square the guide is drawn in: left, top, side (paper pixels) */
+export interface GuideBox {
+  l: number;
+  t: number;
+  s: number;
+}
+
+/** bounding box of a point set: width and height, plus its centre */
+function bounds(pts: Pt[]): { w: number; h: number; cx: number; cy: number } {
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { w: maxX - minX, h: maxY - minY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
+}
+
 /** resample evenly by arc length */
 function resample(pts: Pt[], n = 32): Pt[] {
   if (pts.length === 0) return [];
@@ -46,20 +68,9 @@ function resample(pts: Pt[], n = 32): Pt[] {
 
 /** centre + uniform-scale to a unit box (rotation already irrelevant for Hausdorff) */
 function normalizeUnit(pts: Pt[]): Pt[] {
-  let minX = Infinity,
-    maxX = -Infinity,
-    minY = Infinity,
-    maxY = -Infinity;
-  for (const p of pts) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
-  }
-  const s = Math.max(maxX - minX, maxY - minY);
+  const { w, h, cx, cy } = bounds(pts);
+  const s = Math.max(w, h);
   if (s < 1e-9) return [{ x: 0, y: 0 }];
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
   return pts.map((p) => ({ x: (p.x - cx) / s, y: (p.y - cy) / s }));
 }
 
@@ -91,17 +102,8 @@ function shapeDistance(strokeRaw: Pt[], templateRaw: Pt[]): number {
 /** |log(aspect ratio difference)| — circle-vs-oval, square-vs-rect discriminator */
 function aspectLogDiff(a: Pt[], b: Pt[]): number {
   const ar = (pts: Pt[]) => {
-    let minX = Infinity,
-      maxX = -Infinity,
-      minY = Infinity,
-      maxY = -Infinity;
-    for (const p of pts) {
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.y > maxY) maxY = p.y;
-    }
-    return (maxX - minX + 1e-9) / (maxY - minY + 1e-9);
+    const { w, h } = bounds(pts);
+    return (w + 1e-9) / (h + 1e-9);
   };
   return Math.abs(Math.log(ar(a) / ar(b)));
 }
@@ -109,20 +111,10 @@ function aspectLogDiff(a: Pt[], b: Pt[]): number {
 export type Verdict = 'match' | 'close' | 'scribble';
 
 /** does the stroke wander all over the paper instead of committing to one shape? */
-function wanders(strokeRaw: Pt[], guideBox: { l: number; t: number; s: number }): boolean {
+function wanders(strokeRaw: Pt[], guideBox: GuideBox): boolean {
   if (strokeRaw.length < 6) return false;
-  let minX = Infinity,
-    maxX = -Infinity,
-    minY = Infinity,
-    maxY = -Infinity;
-  for (const p of strokeRaw) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
-  }
-  const diag = Math.hypot(maxX - minX, maxY - minY);
-  return diag > guideBox.s * 1.35;
+  const { w, h } = bounds(strokeRaw);
+  return Math.hypot(w, h) > guideBox.s * 1.35;
 }
 
 /** A genuine shape attempt is CLOSED (ends near where it began) or TIGHT
@@ -131,19 +123,10 @@ function wanders(strokeRaw: Pt[], guideBox: { l: number; t: number; s: number })
 function looksIntentional(strokeRaw: Pt[]): boolean {
   if (strokeRaw.length < 6) return false;
   let len = 0;
-  let minX = Infinity,
-    maxX = -Infinity,
-    minY = Infinity,
-    maxY = -Infinity;
-  for (let i = 0; i < strokeRaw.length; i++) {
-    const p = strokeRaw[i];
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
-    if (i > 0) len += Math.hypot(p.x - strokeRaw[i - 1].x, p.y - strokeRaw[i - 1].y);
-  }
-  const diag = Math.hypot(maxX - minX, maxY - minY);
+  for (let i = 1; i < strokeRaw.length; i++)
+    len += Math.hypot(strokeRaw[i].x - strokeRaw[i - 1].x, strokeRaw[i].y - strokeRaw[i - 1].y);
+  const { w, h } = bounds(strokeRaw);
+  const diag = Math.hypot(w, h);
   if (diag < 1e-6) return false;
   const a = strokeRaw[0];
   const b = strokeRaw[strokeRaw.length - 1];
@@ -181,7 +164,7 @@ const ASPECT_GUARD = 0.3;
 export function judgeGlyph(
   strokeRaw: Pt[],
   inkRaw: Pt[],
-  guideBox?: { l: number; t: number; s: number },
+  guideBox?: GuideBox,
 ): { verdict: Verdict; score: number } {
   if (strokeRaw.length < 6) return { verdict: 'scribble', score: 0 };
   if (!guideBox) return { verdict: 'scribble', score: 0 };
@@ -235,7 +218,7 @@ export function judgeGlyph(
 export function judgeStroke(
   strokeRaw: Pt[],
   templateRaw: Pt[],
-  guideBox?: { l: number; t: number; s: number },
+  guideBox?: GuideBox,
 ): { verdict: Verdict; score: number } {
   if (guideBox && wanders(strokeRaw, guideBox)) return { verdict: 'scribble', score: 0 };
   if (!looksIntentional(strokeRaw)) return { verdict: 'scribble', score: 0 };

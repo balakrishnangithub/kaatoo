@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useStore } from '../lib/store';
+import { DEFAULT_NAME, SESSION_MINUTES, useStore } from '../lib/store';
+import { isoDate } from '../lib/age';
 import { Art } from '../art';
 
 /* First-run setup: the app needs to know HER before it can meet her where she
@@ -12,7 +13,12 @@ export default function Onboarding() {
   const [mins, setMins] = useState(s.settings.sessionMin);
 
   const start = () => {
-    s.updateSettings({ name: name.trim() || 'செல்லம்', birth, sessionMin: mins, onboarded: true });
+    s.updateSettings({
+      name: name.trim() || DEFAULT_NAME,
+      birth,
+      sessionMin: mins,
+      onboarded: true,
+    });
   };
 
   return (
@@ -32,10 +38,9 @@ export default function Onboarding() {
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-2xl border-plum/20 bg-white px-4 py-2.5 font-display font-bold text-lg text-plum outline-none focus:border-sage"
-            style={{ borderWidth: 3 }}
+            className="w-full rounded-2xl border-3 border-plum/20 bg-white px-4 py-2.5 font-display font-bold text-lg text-plum outline-none focus:border-sage"
             maxLength={20}
-            placeholder="செல்லம்"
+            placeholder={DEFAULT_NAME}
           />
         </div>
 
@@ -44,9 +49,9 @@ export default function Onboarding() {
           <input
             type="date"
             value={birth}
+            max={isoDate(new Date())}
             onChange={(e) => setBirth(e.target.value)}
-            className="w-full rounded-2xl border-plum/20 bg-white px-4 py-2.5 font-semibold text-plum outline-none focus:border-sage"
-            style={{ borderWidth: 3 }}
+            className="w-full rounded-2xl border-3 border-plum/20 bg-white px-4 py-2.5 font-semibold text-plum outline-none focus:border-sage"
           />
           <div className="text-xs text-plum/60 font-semibold mt-1">
             Used only to pick age-right starting levels — everything stays on this device.
@@ -58,10 +63,10 @@ export default function Onboarding() {
             அமர்வு நேரம் · session length
           </div>
           <div className="flex gap-2">
-            {[5, 10, 15, 20].map((m) => (
+            {SESSION_MINUTES.map((m) => (
               <button
                 key={m}
-                className={`btn-chunky flex-1 !min-h-10 ${mins === m ? 'bg-sun' : ''}`}
+                className={`btn-chunky flex-1 !min-h-10 !px-0 ${mins === m ? 'bg-sun' : ''}`}
                 onClick={() => setMins(m)}
               >
                 {m}m

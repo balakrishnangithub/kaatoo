@@ -52,6 +52,11 @@ if (!('ResizeObserver' in window)) {
   };
 }
 
+// pointer capture (drag gestures call it on pointer-down) and hit-testing
+// (a drop looks up what is under the finger) — jsdom does no layout
+if (!Element.prototype.setPointerCapture) Element.prototype.setPointerCapture = () => {};
+if (!document.elementFromPoint) document.elementFromPoint = () => null;
+
 // canvas 2d — return null so components guard naturally
 if (typeof HTMLCanvasElement !== 'undefined') {
   HTMLCanvasElement.prototype.getContext = (() =>

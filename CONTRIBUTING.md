@@ -43,27 +43,36 @@ Every change must keep these promises. They are the product.
 
 ## The game recipe
 
-Every game follows the same skeleton — copy it:
+Every round-based game is built from the same four hooks — start from this:
 
 ```tsx
 export default function MyGame({ onHome }: { onHome: () => void }) {
-  const { levelFor, recordWin, recordOutcome } = useStore();
-  const level = levelFor('mygame', MAX_LEVEL);
-  const [round, setRound] = useState(0);
-  const [ended, setEnded] = useState(false);
-  const [misses, setMisses] = useState(0);
-  const done = ended || round >= ROUNDS;
+  const level = useFrozenLevel('mygame', MAX_LEVEL);
+  const [board, setBoard] = useState(() => deal(level));
+  const { round, done, solved, misses, miss, solve, restart } = useRounds('mygame', ROUNDS, () =>
+    setBoard(deal(level)), // …and reset any other per-round state here
+  );
+  const [wrong, flashWrong] = useFlash<string>();
 
   useInstruction('தமிழ் அறிவுரை', 'english echo', [round], !done);
 
-  // …round logic; on finishing the LAST round: recordWin + setEnded(true)
-  //    instead of setRound — nothing may appear or speak behind the EndCard.
+  const choose = (option: Option) => {
+    if (solved) return; // the round is answered — stray taps do nothing
+    if (isRight(option)) {
+      chimeGood();
+      speak('சரி!', 'ta');
+      solve(800); // records the round, then deals the next one (or ends the game)
+    } else {
+      miss(); // soft chime, and one more reason to offer help
+      flashWrong(option.key);
+    }
+  };
 
   return (
     <div className="relative h-full">
       <GameShell ta="தமிழ் பெயர்" en="english name" art="someArt" onHome={onHome} tint="#…">
         <GuideHand target={…} layerRef={layerRef} guideKey="mygame"
-                   active={!done} fireSignal={misses} />
+                   active={!solved && !done} fireSignal={misses} />
         {/* play field */}
       </GameShell>
       {done && <EndCard onAgain={restart} onHome={onHome} />}
@@ -72,29 +81,53 @@ export default function MyGame({ onHome }: { onHome: () => void }) {
 }
 ```
 
+What each hook is for — each one replaces code that used to be hand-copied
+into every game, where the copies had drifted apart:
+
+- **`useRounds(gameId, ROUNDS, deal)`** owns the round lifecycle: a double-tap
+  on the right answer counts once, the last round ends the game instead of
+  dealing a phantom question behind the end card, and nothing fires after the
+  child has left. `deal` runs in the same update as the round change, so a new
+  round never paints with the old round's state. It also calls
+  `recordOutcome` (once per round — the skill signal that drives difficulty)
+  and `recordWin` (once per game); games never call those themselves.
+- **`useFrozenLevel(gameId, max)`** reads the difficulty once per sitting. The
+  tap that finishes a round is exactly what changes the level, so reading
+  `levelFor` on every render re-deals the board mid-celebration.
+- **`useTimers()`** — arm follow-ups with `later(fn, ms)`, never a bare
+  `setTimeout`: they are disarmed when the game unmounts.
+- **`useFlash()`** — the 450 ms wiggle on a wrong tap.
+
 Rules that make games feel uniform:
 
-- **Rounds are finite** (`ROUNDS` constant, usually 3–5). The last round sets
-  `ended` — no phantom question behind the end card, no speech overlap.
+- **Rounds are finite** (`ROUNDS` constant, usually 3–5).
 - **`useInstruction(…, !done)`** — the instructor goes quiet when the game ends.
 - **GuideHand with `fireSignal={misses}`** for tap-choice games — help answers
   a mistake, never anticipates. Free-play games (draw, bubbles) use the idle
   hand instead.
-- **`recordOutcome(gameId, clean)`** once per round — that's the skill signal
-  that drives difficulty. `recordWin(gameId)` once per game.
 - **Speech**: `speak(ta, 'ta')` for single lines, `speakPair` for Tamil+English,
-  `speakSeq` when highlights must follow the voice word by word. Always speak
-  the _full_ name of a thing ("சிவப்பு வட்டம்"), never a fragment.
+  `speakSeq` when highlights must follow the voice word by word. A line
+  interrupts whatever is being said; pass `{ queue: true }` when it must
+  _follow_ the previous line instead (a round's question after the opening
+  instruction) — otherwise one of the two is cut off after a syllable. Always
+  speak the _full_ name of a thing ("சிவப்பு வட்டம்"), never a fragment.
 - **Cards**: use `SwipeableCard` with `behindNext`/`behindPrev` so every card
-  deck in the app swipes the same way.
+  deck in the app swipes the same way. A "look, then find" vocabulary game is
+  just `LookFind` with its own cards (see Words and Emotions).
 - **Letters/digits** always render with `style={{ fontFamily: HAND_FONT }}`.
+- **Styling**: `btn-chunky` and `sticker` live in Tailwind's components layer,
+  so a utility on the same element wins (`btn-chunky bg-sun` is yellow). Keep
+  them there. And put `anim-pop` on a _child_ of anything positioned with a
+  transform — an animation outranks the element's own `transform`.
 
 ## Adding a new game
 
-1. Create `src/games/MyGame.tsx` following the recipe above.
-2. Register it in the `GAMES` map in `src/App.tsx`.
-3. Add its home-screen card to `ACTIVITIES` in `src/data/content.ts`
-   (id, Tamil + English label, an artwork id, a pastel background).
+1. Add its home-screen card to `ACTIVITIES` in `src/data/content.ts`
+   (id, Tamil + English label, an artwork id, a pastel background). That
+   creates its `GameId`.
+2. Create `src/games/MyGame.tsx` following the recipe above.
+3. Register it in the `GAMES` map in `src/App.tsx` — the compiler insists:
+   the map is keyed by `GameId`, so a missing or misspelt entry does not build.
 4. If it needs new artwork, add a hand-drawn SVG component in `src/art/`
    (flat shapes, cream outlines, no gradients-heavy effects — see the existing
    ones for the visual language).

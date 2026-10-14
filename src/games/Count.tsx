@@ -1,11 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Art } from '../art';
 import { NUMBERS, WORDS, type WordCard } from '../data/content';
-import { chimeGood, chimeSoft, speak, speakPair } from '../lib/speech';
+import { chimeGood, speak, speakPair } from '../lib/speech';
 import { useStore } from '../lib/store';
 import { EndCard, GameShell } from '../components/chrome';
-import { HAND_FONT, sample, shuffle } from '../lib/util';
+import { HAND_FONT, pick, sample, shuffle } from '../lib/util';
+import { useFlash } from '../hooks/useFlash';
+import { useFrozenLevel } from '../hooks/useFrozenLevel';
 import { useInstruction } from '../hooks/useInstruction';
+import { useRounds } from '../hooks/useRounds';
+import { useTimers } from '../hooks/useTimers';
 import { GuideHand } from '../components/hint';
 
 const ROUNDS = 5;
@@ -17,38 +21,45 @@ function rangeFor(level: number): [number, number] {
   return [5, 10];
 }
 
+interface Board {
+  word: WordCard;
+  n: number; // how many to count
+  options: number[]; // the answer buttons
+}
+
+function deal(level: number): Board {
+  const [lo, hi] = rangeFor(level);
+  const n = lo + Math.floor(Math.random() * (hi - lo + 1));
+  const near = NUMBERS.map((x) => x.n).filter(
+    (x) => x !== n && x >= Math.max(1, lo - 1) && x <= hi + 1,
+  );
+  return { word: pick(WORDS), n, options: shuffle([n, ...sample(near, 2)]) };
+}
+
+/** "one fish", "three buses" — the English the voice echoes after the count */
+function countEn(n: number, word: WordCard): string {
+  const [one, many] = word.counting ?? [word.en, `${word.en}s`];
+  return `${NUMBERS[n - 1].en} ${n === 1 ? one : many}`;
+}
+
 export default function Count({ onHome }: { onHome: () => void }) {
-  const { levelFor, recordWin, recordOutcome, settings } = useStore();
-  const level = levelFor('count', 3);
-  const [round, setRound] = useState(0);
-  const [word, setWord] = useState<WordCard>(() => sample(WORDS, 1)[0]);
-  const [n, setN] = useState(2);
+  const { settings } = useStore();
+  const level = useFrozenLevel('count', 3);
+  const [board, setBoard] = useState(() => deal(level));
   const [tapped, setTapped] = useState<number[]>([]);
   const [asking, setAsking] = useState(false);
-  const [options, setOptions] = useState<number[]>([]);
-  const [wrong, setWrong] = useState<number | null>(null);
-  const [misses, setMisses] = useState(0);
-  const [ended, setEnded] = useState(false);
-  const done = ended || round >= ROUNDS;
+  const { round, done, solved, misses, miss, solve, restart } = useRounds('count', ROUNDS, () => {
+    setBoard(deal(level));
+    setTapped([]);
+    setAsking(false);
+  });
+  const [wrong, flashWrong] = useFlash<number>();
+  const { later } = useTimers();
   const layerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const answerRefs = useRef<Record<number, HTMLButtonElement | null>>({});
-
-  useEffect(() => {
-    const [lo, hi] = rangeFor(level);
-    const count = lo + Math.floor(Math.random() * (hi - lo + 1));
-    setWord(sample(WORDS, 1)[0]);
-    setN(count);
-    setTapped([]);
-    setAsking(false);
-    setMisses(0);
-    itemRefs.current = [];
-    answerRefs.current = {};
-    const others = NUMBERS.map((x) => x.n).filter(
-      (x) => x !== count && x >= Math.max(1, lo - 1) && x <= hi + 1,
-    );
-    setOptions(shuffle([count, ...sample(others, 2)]));
-  }, [round, level]);
+  const { word, n, options } = board;
+  const question = 'எத்தனை ' + word.ta + '?';
 
   // the hand always points at the NEXT thing to do: next uncounted item, then the answer.
   // resolved lazily at fire time so freshly mounted buttons are never stale.
@@ -62,41 +73,27 @@ export default function Count({ onHome }: { onHome: () => void }) {
 
   const tap = (i: number) => {
     if (asking || tapped.includes(i)) return;
-    const k = tapped.length + 1;
-    const num = NUMBERS[k - 1];
-    speak(num.ta, 'ta');
-    chimeGood();
     const next = [...tapped, i];
+    speak(NUMBERS[next.length - 1].ta, 'ta');
+    chimeGood();
     setTapped(next);
     if (next.length === n) {
-      window.setTimeout(() => {
+      later(() => {
         setAsking(true);
-        speak('எத்தனை ' + word.ta + '?', 'ta');
+        speak(question, 'ta');
       }, 700);
     }
   };
 
   const answer = (v: number) => {
+    if (solved) return;
     if (v === n) {
       chimeGood();
-      recordOutcome('count', misses === 0);
-      const num = NUMBERS[n - 1];
-      if (settings.english) speakPair(`${n} ${word.ta}!`, `${num.en} ${word.en}s`, true);
-      else speak(`${n} ${word.ta}!`, 'ta');
-      window.setTimeout(() => {
-        // last round: end here — no phantom question behind the end card
-        if (round + 1 >= ROUNDS) {
-          recordWin('count');
-          setEnded(true);
-        } else {
-          setRound((r) => r + 1);
-        }
-      }, 900);
+      speakPair(`${n} ${word.ta}!`, countEn(n, word), settings.english);
+      solve(900);
     } else {
-      chimeSoft();
-      setWrong(v);
-      setMisses((m) => m + 1);
-      window.setTimeout(() => setWrong(null), 450);
+      miss();
+      flashWrong(v);
     }
   };
 
@@ -112,11 +109,11 @@ export default function Count({ onHome }: { onHome: () => void }) {
             target={resolveGuide}
             layerRef={layerRef}
             guideKey="count"
-            active={!done}
+            active={!solved && !done}
             fireSignal={misses}
           />
           <div
-            className={`grid gap-3 w-full max-w-md mx-auto ${cols === 2 ? 'grid-cols-2 max-w-xs' : cols === 3 ? 'grid-cols-3' : 'grid-cols-4'}`}
+            className={`grid gap-3 w-full mx-auto ${cols === 2 ? 'grid-cols-2 max-w-xs' : cols === 3 ? 'grid-cols-3 max-w-md' : 'grid-cols-4 max-w-md'}`}
           >
             {Array.from({ length: n }).map((_, i) => {
               const k = tapped.indexOf(i);
@@ -158,7 +155,7 @@ export default function Count({ onHome }: { onHome: () => void }) {
             <div className="anim-fade-up">
               <button
                 className="sticker mx-auto mb-2 px-5 py-2 flex items-center justify-center gap-2 font-display font-bold text-2xl text-plum"
-                onClick={() => speak('எத்தனை ' + word.ta + '?', 'ta')}
+                onClick={() => speak(question, 'ta')}
               >
                 எத்தனை <Art id={word.art} size={34} /> ?
               </button>
@@ -181,15 +178,7 @@ export default function Count({ onHome }: { onHome: () => void }) {
           )}
         </div>
       </GameShell>
-      {done && (
-        <EndCard
-          onAgain={() => {
-            setEnded(false);
-            setRound(0);
-          }}
-          onHome={onHome}
-        />
-      )}
+      {done && <EndCard onAgain={restart} onHome={onHome} />}
     </div>
   );
 }

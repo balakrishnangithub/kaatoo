@@ -1,47 +1,46 @@
 /// Kaatoo service worker — offline-first by design.
 ///
 /// Why this exists: Kaatoo is for little children, often on tablets with flaky
-/// or no internet. Everything the app needs (app shell, self-hosted fonts) is
-/// precached on first visit; afterwards the app opens instantly, fully offline.
+/// or no internet. Everything the app ships (app shell, bundles, self-hosted
+/// fonts, icons) is precached on first visit; afterwards it works fully offline.
 ///
 /// Privacy: nothing is ever sent anywhere. This worker only *reads* from this
-/// origin and stores responses in the browser's Cache Storage on-device.
+/// origin (and the two Google Fonts hosts the page already uses) and stores
+/// the responses in the browser's Cache Storage on-device.
 ///
 /// Strategy:
-///   - install: precache the app shell (build-hashed assets → safe forever)
-///   - activate: delete caches from older versions
-///   - fetch, same-origin GET: cache-first (all precached assets are
-///     content-hashed, so stale entries are impossible), network fallback for
-///     anything not precached
-///   - SPA navigations: network-first, falling back to the cached shell
+///   - install: precache every file of THIS build into a cache named after it
+///   - activate: delete Kaatoo's caches from older builds
+///   - navigations: network-first (fresh when online), falling back to this
+///     build's own shell — the shell and its bundles always come from one build
+///   - same-origin GET: this build's precache, then the network
+///   - Google Fonts: cache-first, in a cache that outlives builds
 
-const VERSION = 'v1';
-const PRECACHE = `kaatoo-precache-${VERSION}`;
-const RUNTIME = `kaatoo-runtime-${VERSION}`;
+// Filled in by the build (vite-plugin-sw.ts): a fingerprint of everything in
+// dist/, and the list of those files. Any change to any shipped file changes
+// this line — which is what makes browsers install the new worker and drop the
+// old cache. Nothing to bump by hand.
+const BUILD = { version: 'dev', files: [] };
 
-// Stable public/ assets, relative so the app works from any base path
-// (GitHub Pages sub-folder included). Hashed build assets are fetched from
-// the generated sw-assets.js at install time.
-const STATIC_ASSETS = [
-  './',
-  'index.html',
-  'manifest.webmanifest',
-  'icon.svg',
-  'icon-192.png',
-  'icon-512.png',
-  'icon-maskable-512.png',
-  'fonts/kavivanar-tamil.woff2',
-  'fonts/andika-latin.woff2',
-];
+// Every cache this app owns starts with the prefix. On a shared origin
+// (user.github.io/…) the other apps' caches are not ours to delete.
+const PREFIX = 'kaatoo-';
+const PRECACHE = `${PREFIX}precache-${BUILD.version}`;
+const FONTS = `${PREFIX}fonts`;
+const FONT_ORIGINS = ['https://fonts.googleapis.com', 'https://fonts.gstatic.com'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
-      const buildAssets = await fetch('sw-assets.js')
-        .then((r) => (r.ok ? r.json() : []))
-        .catch(() => []);
       const cache = await caches.open(PRECACHE);
-      await cache.addAll([...STATIC_ASSETS, ...buildAssets]);
+      // Bundles under assets/ are content-hashed, so any copy of one is the
+      // right copy. Everything else keeps its name between builds — those are
+      // fetched past the HTTP cache, or a stale copy could be precached.
+      await cache.addAll(
+        BUILD.files.map((file) =>
+          file.startsWith('assets/') ? file : new Request(file, { cache: 'reload' }),
+        ),
+      );
       // No skipWaiting on purpose: a child may be mid-activity. The new worker
       // takes over when all tabs close — calm beats clever here.
     })(),
@@ -51,59 +50,50 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      const keep = new Set([PRECACHE, RUNTIME]);
       for (const key of await caches.keys()) {
-        if (!keep.has(key)) await caches.delete(key);
+        if (key.startsWith(PREFIX) && key !== PRECACHE && key !== FONTS) await caches.delete(key);
       }
       await self.clients.claim();
     })(),
   );
 });
 
+/** Google Fonts: the stylesheet and the font files it names, kept for offline. */
+async function font(event) {
+  const cache = await caches.open(FONTS);
+  const cached = await cache.match(event.request);
+  if (cached) return cached;
+  const response = await fetch(event.request);
+  // waitUntil: the worker must stay alive until the copy is actually stored
+  if (response.ok) event.waitUntil(cache.put(event.request, response.clone()));
+  return response;
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
-  const sameOrigin = url.origin === self.location.origin;
-  const fontOrigin =
-    url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com';
+  if (FONT_ORIGINS.includes(url.origin)) {
+    event.respondWith(font(event));
+    return;
+  }
+  if (url.origin !== self.location.origin) return; // never touch anything else
 
-  if (!sameOrigin && !fontOrigin) return; // never touch anything else
-
-  // SPA navigation: try network (fresh content), fall back to cached shell.
+  // SPA navigation: try the network (fresh content), fall back to the shell.
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            caches.open(PRECACHE).then((c) => c.put('index.html', copy));
-          }
-          return response;
-        })
-        .catch(() =>
-          caches
-            .match('index.html', { ignoreSearch: true })
-            .then((cached) => cached || Response.error()),
-        ),
+      fetch(request).catch(async () => {
+        const shell = await caches.match('index.html', { cacheName: PRECACHE });
+        return shell || Response.error();
+      }),
     );
     return;
   }
 
-  // Everything else: cache-first, then network (remembered for offline).
+  // Everything else: this build's precache, then the network. (A miss means a
+  // newer build's page is asking — that build's own worker will precache it.)
   event.respondWith(
-    caches.match(request).then(
-      (cached) =>
-        cached ||
-        fetch(request).then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            const store = sameOrigin ? PRECACHE : RUNTIME; // fonts go runtime-side
-            caches.open(store).then((c) => c.put(request, copy));
-          }
-          return response;
-        }),
-    ),
+    caches.match(request, { cacheName: PRECACHE }).then((cached) => cached || fetch(request)),
   );
 });
