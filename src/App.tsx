@@ -1,36 +1,33 @@
-import { useEffect, useState, type ComponentType } from 'react';
+import { lazy, Suspense, useEffect, useState, type ComponentType } from 'react';
 import type { GameId } from './data/content';
 import { StoreProvider, useStore } from './lib/store';
 import Home from './screens/Home';
 import Onboarding from './screens/Onboarding';
 import Parent from './screens/Parent';
 import WindDown from './screens/WindDown';
-import Bubbles from './games/Bubbles';
-import Words from './games/Words';
-import Draw from './games/Draw';
-import Sort from './games/Sort';
-import Shadow from './games/Shadow';
-import Odd from './games/Odd';
-import Pattern from './games/Pattern';
-import Count from './games/Count';
-import Sizes from './games/Sizes';
-import Emotions from './games/Emotions';
 
 type Screen = 'home' | 'parent' | GameId;
 
 /* one screen per activity. Keyed by GameId, so an activity added to ACTIVITIES
-   without its game here (or a game without its activity) does not compile. */
+   without its game here (or a game without its activity) does not compile.
+   Each game is its own small file, fetched when it is opened (the offline
+   worker has them all): a phone parses only the home screen to start, which
+   on a modest CPU is the difference between a quick start and a slow one. */
 const GAMES: Record<GameId, ComponentType<{ onHome: () => void }>> = {
-  bubbles: Bubbles,
-  words: Words,
-  draw: Draw,
-  sort: Sort,
-  shadow: Shadow,
-  odd: Odd,
-  pattern: Pattern,
-  count: Count,
-  sizes: Sizes,
-  emotions: Emotions,
+  bubbles: lazy(() => import('./games/Bubbles')),
+  words: lazy(() => import('./games/Words')),
+  draw: lazy(() => import('./games/Draw')),
+  sort: lazy(() => import('./games/Sort')),
+  shadow: lazy(() => import('./games/Shadow')),
+  odd: lazy(() => import('./games/Odd')),
+  pattern: lazy(() => import('./games/Pattern')),
+  count: lazy(() => import('./games/Count')),
+  sizes: lazy(() => import('./games/Sizes')),
+  emotions: lazy(() => import('./games/Emotions')),
+  sounds: lazy(() => import('./games/Sounds')),
+  voices: lazy(() => import('./games/Voices')),
+  listen: lazy(() => import('./games/Listen')),
+  drums: lazy(() => import('./games/Drums')),
 };
 
 const isScreen = (s: string | null): s is Screen =>
@@ -72,7 +69,11 @@ function Shell() {
         <>
           {screen === 'home' && <Home onOpen={setScreen} onParent={() => setScreen('parent')} />}
           {screen === 'parent' && <Parent onBack={home} />}
-          {Game && <Game onHome={home} />}
+          {Game && (
+            <Suspense fallback={<div className="h-full" />}>
+              <Game onHome={home} />
+            </Suspense>
+          )}
           {phase === 'rest' && <WindDown />}
         </>
       )}

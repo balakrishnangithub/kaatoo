@@ -31,7 +31,8 @@ engineered to be easy to put down:
 
 ## What's inside
 
-Ten activities, each adapting to what the child can actually do:
+Fourteen activities, each adapting to what the child can actually do — four of
+them train the ear:
 
 | Game                | What it teaches                                                                         |
 | ------------------- | --------------------------------------------------------------------------------------- |
@@ -45,6 +46,10 @@ Ten activities, each adapting to what the child can actually do:
 | எண் · Count         | count and match numerals                                                                |
 | அளவு · Sizes        | big → small ordering, with a sorting celebration                                        |
 | உணர்வு · Emotions   | feelings vocabulary (look → find)                                                       |
+| சத்தம் · Sounds     | hear a sound, find what made it — sounds made on the device                             |
+| பாடல் · Voices      | pitch by ear: did the big elephant (low) or the little bird (high) sing?                |
+| கேள் · Listen       | the sounds inside Tamil words, down to பல் / பால்                                       |
+| தாளம் · Drums       | drum along at her own pace, then echo short rhythms                                     |
 
 Design details worth knowing:
 
@@ -62,6 +67,12 @@ Design details worth knowing:
   there is no age ceiling. Every fourth round is an easy one, mashing counts
   for less, and time away makes the estimate quick to move again
   (`src/lib/skill.ts`).
+- **Listening games built for small speakers** — every sound is made on the
+  device (no recordings), carries its identity above 300 Hz where phone
+  speakers still play, and the pitch game varies loudness so only pitch can
+  tell the voices apart. The drum game judges only the gaps between taps, so
+  each phone's touch and audio delay cancels out. Research notes are in the
+  parents' corner and each game file.
 - **Runs on modest hardware** — no blur or heavy effects behind overlays, a
   drawing canvas capped at 2× resolution, one shared audio output with a soft
   limiter (no crackle on phone speakers), sound unlocked on the first touch,
@@ -115,12 +126,13 @@ src/
 ├── components/
 │   ├── chrome.tsx        HoldButton · GameShell · EndCard — the shared frame
 │   ├── hint.tsx          GuideHand (adaptive hints) · SwipeableCard
-│   └── lookfind.tsx      the "look, then find" activity behind Words and Emotions
+│   ├── lookfind.tsx      the "look, then find" activity behind Words and Emotions
+│   └── listening.tsx     what the listening games share: the sound gate, the replay bubble
 ├── data/
 │   ├── content.ts        every Tamil word, colour, shape, number, praise phrase
 │   ├── levels.ts         what each level of each game asks of her
 │   └── content.test.ts   integrity guard: every card points at artwork that exists
-├── games/                the ten activities — one file each
+├── games/                the fourteen activities — one file each, loaded when opened
 ├── hooks/
 │   ├── useRounds.ts      the round lifecycle every tap-choice game shares
 │   ├── useSkill.ts       a game's live skill estimate: open, record, next level
@@ -134,6 +146,9 @@ src/
 │   ├── skill.ts          the skill model: estimate, update, choose the next level
 │   ├── store.tsx         settings, progress, session timer (localStorage only)
 │   ├── audio.ts          the shared WebAudio output: limiter, unlock on first touch
+│   ├── sounds.ts         every sound the listening games play, made on the device
+│   ├── rhythm.ts         the drum game's patterns, judged by the gaps between taps
+│   ├── listen.ts         "listen closely" rounds, by how alike the names sound
 │   ├── speech.ts         Tamil-first speech, chimes, sequenced utterances
 │   ├── trace.ts          stroke/shape/glyph classifier for the drawing game
 │   ├── seriation.ts      big-to-small layout maths for the sizes game

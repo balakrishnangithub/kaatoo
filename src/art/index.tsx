@@ -33,6 +33,7 @@ import {
   Sun,
   Tree,
 } from './world2';
+import { Ear, Garland, Hill, Leg, Milk, Stone, Tooth } from './listen';
 import {
   FaceAngry,
   FaceCalm,
@@ -93,6 +94,13 @@ export const ART = {
   face_surprised: FaceSurprised,
   face_sleepy: FaceSleepy,
   face_calm: FaceCalm,
+  tooth: Tooth,
+  milk: Milk,
+  stone: Stone,
+  leg: Leg,
+  hill: Hill,
+  garland: Garland,
+  ear: Ear,
 } satisfies Record<string, ComponentType<ArtProps>>;
 
 export type ArtId = keyof typeof ART;

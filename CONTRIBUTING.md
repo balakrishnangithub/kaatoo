@@ -130,6 +130,12 @@ Rules that make games feel uniform:
   _follow_ the previous line instead (a round's question after the opening
   instruction) — otherwise one of the two is cut off after a syllable. Always
   speak the _full_ name of a thing ("சிவப்பு வட்டம்"), never a fragment.
+- **Listening games** (`components/listening.tsx`): wrap the play area in
+  `SoundGate` — with the sound off it offers the switch instead of a silent
+  guessing game. Taps while the sound is still playing are not answers; only
+  start the turn when it has finished (`speakSeq`'s `onDone`, or a sound's
+  returned length). Make sounds with `lib/sounds.ts`: keep what identifies
+  a sound above ~300 Hz, where phone speakers still play.
 - **Cards**: use `SwipeableCard` with `behindNext`/`behindPrev` so every card
   deck in the app swipes the same way. A "look, then find" vocabulary game is
   just `LookFind` with its own cards (see Words and Emotions).
@@ -171,6 +177,8 @@ Tab S7, iPhone 13, iPhone 17, Lenovo Yoga 7i. Before merging:
 - [ ] With the CPU throttled 4× in DevTools (a mid-range phone), Bubbles and the
       Sizes celebration still move smoothly
 - [ ] The parents' corner voice check names a Tamil voice (or explains how to add one)
+- [ ] The listening games on a real phone speaker, and on an iPhone with the
+      ring/silent switch set to silent (they should still be heard)
 - [ ] Sounds can be muted; the game is fully playable muted
 - [ ] Session timer pause/resume works when the tab is backgrounded
 - [ ] `localStorage` cleared → onboarding appears; everything still works

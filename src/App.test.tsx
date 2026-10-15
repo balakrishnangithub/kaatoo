@@ -29,11 +29,11 @@ describe('App shell', () => {
     expect(screen.getByText('சொற்கள்')).toBeInTheDocument();
   });
 
-  it('?screen=<game> opens straight into that game', () => {
+  it('?screen=<game> opens straight into that game', async () => {
     seedProfile({ settings: { sound: false } });
     window.history.replaceState({}, '', '/?screen=count');
     render(<App />);
-    expect(screen.getByText('counting')).toBeInTheDocument();
+    expect(await screen.findByText('counting')).toBeInTheDocument();
   });
 
   it('when the session time runs out on the home screen, it drifts into rest by itself', async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent, screen } from '@testing-library/react';
 import Home from './Home';
+import { ACTIVITIES } from '../data/content';
 import { useStore } from '../lib/store';
 import { renderWithStore, saved, seedProfile } from '../test/helpers';
 
@@ -53,11 +54,18 @@ describe('Home — the sound button', () => {
     expect(saved().settings.sound).toBe(false);
   });
 
-  it('offers all ten activities', () => {
+  it('offers every activity — the listening games among them', () => {
     seedProfile();
     renderWithStore(home);
-    for (const name of ['வரையலாம்', 'குமிழிகள்', 'சொற்கள்', 'உணர்வுகள்'])
+    for (const name of [
+      'வரையலாம்',
+      'குமிழிகள்',
+      'சொற்கள்',
+      'உணர்வுகள்',
+      'என்ன சத்தம்?',
+      'தாளம் போடு',
+    ])
       expect(screen.getByText(name)).toBeInTheDocument();
-    expect(document.querySelectorAll('.sticker.anim-pop')).toHaveLength(10);
+    expect(document.querySelectorAll('.sticker.anim-pop')).toHaveLength(ACTIVITIES.length);
   });
 });

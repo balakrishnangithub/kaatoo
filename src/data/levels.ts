@@ -23,6 +23,31 @@ export const LEVELS: Record<GameId, readonly string[]> = {
   count: ['1–3', '2–5', '3–7', '5–10'],
   sizes: ['3 sizes', '4 sizes', '5 sizes'],
   emotions: ['2 faces', '3 faces', '4 faces', '4 look-alike faces'],
+  sounds: ['2 pictures', '3 pictures', '3 of a kind', '4 of a kind'],
+  voices: [
+    'two octaves apart',
+    'one octave apart',
+    '7 notes apart',
+    '5 notes apart',
+    '3 notes apart',
+    '2 notes apart',
+    '1 note apart',
+  ],
+  listen: [
+    'words that sound different, 2 pictures',
+    'words that sound different, 3 pictures',
+    'same first sound, 2 pictures',
+    'same first sound, 3 pictures',
+    'one sound apart (பல் / பால்)',
+  ],
+  drums: [
+    'drum along, at her own pace',
+    'drum along, a little faster',
+    'drum along, a little slower',
+    'echo 2 beats',
+    'echo 3 beats',
+    'echo a long–short rhythm',
+  ],
 };
 
 /** the hardest level of a game (levels run 0 … top) */
@@ -49,4 +74,26 @@ export const FEELING_FIND: readonly FindLevel[] = [
   { options: 3 },
   { options: 4 },
   { options: 4, alike: true },
+];
+
+/** what's that sound: more pictures, then pictures of the same kind (animal among animals) */
+export const SOUND_FIND: readonly FindLevel[] = [
+  { options: 2 },
+  { options: 3 },
+  { options: 3, alike: true },
+  { options: 4, alike: true },
+];
+
+/** one level of "listen closely": how many pictures, and how alike their names sound */
+export interface ListenLevel {
+  options: number;
+  /** 'apart': names start differently · 'onset': the same first sound · 'pair': one sound apart */
+  near: 'apart' | 'onset' | 'pair';
+}
+export const LISTEN_FIND: readonly ListenLevel[] = [
+  { options: 2, near: 'apart' },
+  { options: 3, near: 'apart' },
+  { options: 2, near: 'onset' },
+  { options: 3, near: 'onset' },
+  { options: 2, near: 'pair' },
 ];

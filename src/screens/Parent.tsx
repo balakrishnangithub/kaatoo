@@ -463,6 +463,27 @@ function Why() {
         </p>
       </div>
       <div className="sticker p-4">
+        <div className="font-display font-bold text-plum text-lg">Listening games</div>
+        <p>
+          Four games train the ear, each built on what toddlers are known to hear. A sound and its
+          picture first (15–25-month-olds match everyday sounds to pictures about as well as words:
+          Cummings et al. 2009). Pitch as <b>who sang</b> — the big elephant or the little bird —
+          never as the words &quot;high&quot; and &quot;low&quot;, which even 5–6-year-olds mix up,
+          while 2½-year-olds already hear a higher voice as a smaller creature (Mondloch &amp;
+          Maurer 2004). The sounds inside Tamil words, down to பல் / பால் (toddlers notice a single
+          wrong sound in a familiar word: Swingley &amp; Aslin 2000). And drumming: first at her own
+          pace, then a little faster or slower, then echoing short rhythms (Kirschner &amp;
+          Tomasello 2009; Provasi &amp; Bobin-Bègue 2003) — judged only by the gaps between her
+          taps, so every phone's touch and sound delay cancels out. Drumming is best with you:
+          children keep time better with a person than with a machine.
+        </p>
+        <p className="mt-2">
+          They are listening for its own sake. Studies of music lessons find no lasting boost to
+          general cleverness or school skills (Sala &amp; Gobet 2020), so Kaatoo makes no such
+          promise.
+        </p>
+      </div>
+      <div className="sticker p-4">
         <div className="font-display font-bold text-plum text-lg">Finish what you start</div>
         <p>
           In drawing, the picture blooms only when she has traced ~85% of the outline — mastery

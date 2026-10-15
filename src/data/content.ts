@@ -94,6 +94,26 @@ export const WORDS: WordCard[] = [
   { art: 'house', ta: 'வீடு', en: 'house', cat: 'nature' },
 ];
 
+/**
+ * Words one sound apart — Tamil vowel length (பல் / பால்: tooth / milk). For
+ * "listen closely" only: they are its hardest level, not part of the first
+ * vocabulary decks.
+ */
+export const PAIR_WORDS: WordCard[] = [
+  { art: 'tooth', ta: 'பல்', en: 'tooth', cat: 'thing' },
+  { art: 'milk', ta: 'பால்', en: 'milk', cat: 'food' },
+  { art: 'stone', ta: 'கல்', en: 'stone', cat: 'nature' },
+  { art: 'leg', ta: 'கால்', en: 'leg', cat: 'thing' },
+  { art: 'hill', ta: 'மலை', en: 'hill', cat: 'nature' },
+  { art: 'garland', ta: 'மாலை', en: 'garland', cat: 'thing' },
+];
+/** which PAIR_WORDS differ by just one sound */
+export const MINIMAL_PAIRS: readonly (readonly [ArtId, ArtId])[] = [
+  ['tooth', 'milk'],
+  ['stone', 'leg'],
+  ['hill', 'garland'],
+];
+
 export interface CategoryDef {
   id: Category;
   ta: string;
@@ -234,7 +254,7 @@ export const ACTIVITIES = [
     id: 'pattern',
     ta: 'முறைகள்',
     en: 'patterns',
-    art: 'drum',
+    art: 'heart',
     bg: '#FFCE80',
     blurb: 'what comes next?',
   },
@@ -261,6 +281,38 @@ export const ACTIVITIES = [
     art: 'face_happy',
     bg: '#CDB4DB',
     blurb: 'name the feeling',
+  },
+  {
+    id: 'sounds',
+    ta: 'என்ன சத்தம்?',
+    en: "what's that sound?",
+    art: 'cow',
+    bg: '#FFCE80',
+    blurb: 'hear it, find who made it',
+  },
+  {
+    id: 'voices',
+    ta: 'யார் பாடுகிறார்?',
+    en: 'big & little voice',
+    art: 'bird',
+    bg: '#A9D6E5',
+    blurb: 'low or high — by ear',
+  },
+  {
+    id: 'listen',
+    ta: 'கவனமாகக் கேள்',
+    en: 'listen closely',
+    art: 'ear',
+    bg: '#B7E4C7',
+    blurb: 'words that sound alike',
+  },
+  {
+    id: 'drums',
+    ta: 'தாளம் போடு',
+    en: 'drum with me',
+    art: 'drum',
+    bg: '#F5CAC3',
+    blurb: 'keep the beat, echo it back',
   },
 ] as const satisfies readonly ActivityDef[];
 
