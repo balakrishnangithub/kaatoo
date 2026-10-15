@@ -6,6 +6,7 @@ import {
   artOf,
   flush,
   installFakeSpeech,
+  nextLevel,
   renderWithStore,
   saved,
   seedProfile,
@@ -52,15 +53,16 @@ describe('Pattern', () => {
 
   it('a level-up on the winning tap never re-deals the row mid-celebration', async () => {
     seedProfile({
-      settings: { sound: false, stageOverride: 1 },
-      progress: aboutToLevelUp('pattern'),
+      settings: { sound: false },
+      progress: aboutToLevelUp('pattern', 1), // level 1: extend an AB pattern
     });
     const { container } = renderWithStore(<Pattern onHome={() => {}} />);
     const before = stripArt(container).slice(0, 4);
     const right = nextInPattern(container);
     fireEvent.click(right);
     fireEvent.click(right); // an excited double-tap
-    expect(saved().progress.pattern.outcomes).toEqual([1, 1, 1, 1]); // tipped, and counted once
+    expect(saved().progress.pattern.outcomes).toEqual([1]); // counted once…
+    expect(nextLevel('pattern', 1)).toBe(2); // …and it tipped the level
     await flush(50);
     expect(stripArt(container).slice(0, 4)).toEqual(before);
     expect(stripArt(container)).toHaveLength(5); // the "?" slot now shows her answer

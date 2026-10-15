@@ -1,18 +1,21 @@
 import { useRef, useState } from 'react';
 import { Art } from '../art';
 import { NUMBERS, WORDS, type WordCard } from '../data/content';
+import { topLevel } from '../data/levels';
 import { chimeGood, speak, speakPair } from '../lib/speech';
+import type { Ladder } from '../lib/skill';
 import { useStore } from '../lib/store';
 import { EndCard, GameShell } from '../components/chrome';
 import { HAND_FONT, pick, sample, shuffle } from '../lib/util';
 import { useFlash } from '../hooks/useFlash';
-import { useFrozenLevel } from '../hooks/useFrozenLevel';
 import { useInstruction } from '../hooks/useInstruction';
 import { useRounds } from '../hooks/useRounds';
 import { useTimers } from '../hooks/useTimers';
 import { GuideHand } from '../components/hint';
 
 const ROUNDS = 5;
+/** counting itself can't go wrong — the answer is one of three numbers */
+const LADDER: Ladder = { top: topLevel('count'), chance: () => 1 / 3 };
 
 function rangeFor(level: number): [number, number] {
   if (level === 0) return [1, 3];
@@ -44,14 +47,16 @@ function countEn(n: number, word: WordCard): string {
 
 export default function Count({ onHome }: { onHome: () => void }) {
   const { settings } = useStore();
-  const level = useFrozenLevel('count', 3);
-  const [board, setBoard] = useState(() => deal(level));
   const [tapped, setTapped] = useState<number[]>([]);
   const [asking, setAsking] = useState(false);
-  const { round, done, solved, misses, miss, solve, restart } = useRounds('count', ROUNDS, () => {
-    setBoard(deal(level));
-    setTapped([]);
-    setAsking(false);
+  const { board, round, done, solved, misses, miss, solve, restart } = useRounds('count', {
+    rounds: ROUNDS,
+    ladder: LADDER,
+    deal,
+    onDeal: () => {
+      setTapped([]);
+      setAsking(false);
+    },
   });
   const [wrong, flashWrong] = useFlash<number>();
   const { later } = useTimers();

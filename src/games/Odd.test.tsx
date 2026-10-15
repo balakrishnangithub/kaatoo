@@ -2,17 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
 import Odd from './Odd';
 import { StoreProvider } from '../lib/store';
+import { abilityAt } from '../lib/skill';
+import { aboutToLevelUp, nextLevel } from '../test/helpers';
 
 /**
  * Regression tests for the vanishing match-model:
  * the difficulty level used to be read LIVE from progress, so a correct tap
  * that crossed the level-up threshold re-dealt the round MID-question — the
  * "find the same" reference image disappeared (or appeared) by itself, and
- * the spoken prompt no longer matched the screen. The level is now frozen
- * for the whole sitting; it only applies on the next visit.
+ * the spoken prompt no longer matched the screen. The level is now chosen
+ * only when a round is dealt: a change waits for the next round.
  */
 
-function seed(outcomes: number[]) {
+function seed(progress: object = {}) {
   localStorage.clear();
   localStorage.setItem(
     'kaatoo-v1',
@@ -27,7 +29,7 @@ function seed(outcomes: number[]) {
         stageOverride: 0,
         onboarded: true,
       },
-      progress: { odd: { plays: 3, wins: 3, outcomes } },
+      progress,
       milestones: {},
     }),
   );
@@ -76,7 +78,7 @@ describe('Odd one out — the vanishing model (live-level regression)', () => {
   });
 
   it('a level-up on the tap never re-deals the question mid-round', async () => {
-    seed([1, 1, 1]); // next clean correct tap → acc 1.0 → live level would jump 0→1
+    seed(aboutToLevelUp('odd')); // the next clean tap tips her level from 0 to 1
     const { container } = renderGame();
 
     // level 0: the match-model and its prompt are on screen
@@ -88,9 +90,8 @@ describe('Odd one out — the vanishing model (live-level regression)', () => {
     expect(correct).toBeTruthy();
     fireEvent.click(correct!);
 
-    // the tap really did record a clean outcome — the old code re-dealt here
-    const saved = JSON.parse(localStorage.getItem('kaatoo-v1') || '{}');
-    expect(saved.progress.odd.outcomes).toEqual([1, 1, 1, 1]);
+    // the tap really did tip the level — the old code re-dealt right here
+    expect(nextLevel('odd', 0)).toBe(1);
 
     // …but nothing on screen may change until the round advances: the model
     // and prompt stay, and the dealt tiles are untouched
@@ -98,15 +99,17 @@ describe('Odd one out — the vanishing model (live-level regression)', () => {
     expect(container.textContent).toContain('இதே மாதிரி எது?');
     expect(tiles(container).map((t) => norm(t))).toEqual(dealtArt);
 
-    // after the advance, the next round is STILL a find-the-same round —
-    // the frozen level holds for the whole sitting
+    // the new level arrives with the next round, board and prompt together:
+    // "which one is different?" — two alike and one odd, with no model to match
     await flush(800);
-    expect(modelButton(container)).toBeTruthy();
-    expect(container.textContent).toContain('இதே மாதிரி எது?');
+    expect(modelButton(container)).toBeNull();
+    expect(container.textContent).not.toContain('இதே மாதிரி எது?');
+    expect(new Set(tiles(container).map((t) => norm(t))).size).toBe(2);
   });
 
   it('a double-tap on the right tile counts once and skips no round', async () => {
-    seed([]);
+    // a child settled at "find the same", so all five rounds ask for a match
+    seed({ odd: { plays: 9, wins: 9, skill: { theta: abilityAt(0, 0.8), u: 0, n: 30, at: 0 } } });
     const { container } = renderGame();
     const correct = matchingTile(container)!;
     fireEvent.click(correct);
@@ -124,7 +127,7 @@ describe('Odd one out — the vanishing model (live-level regression)', () => {
   });
 
   it('a wrong tap never re-deals either — it wiggles and the round stays', async () => {
-    seed([]);
+    seed();
     const { container } = renderGame();
     const dealtArt = tiles(container).map((t) => norm(t));
     const wrongTile = tiles(container).find((t) => t !== matchingTile(container))!;

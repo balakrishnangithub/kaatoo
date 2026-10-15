@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { Art, type ArtId } from '../art';
 import type { GameId, Phrase } from '../data/content';
+import type { FindLevel } from '../data/levels';
 import { useFlash } from '../hooks/useFlash';
 import { useRounds } from '../hooks/useRounds';
 import { chimeGood, chimeTap, hush, speak, speakPair } from '../lib/speech';
+import type { Ladder } from '../lib/skill';
 import { useStore } from '../lib/store';
-import { pick, sample, shuffle } from '../lib/util';
+import { pick, samplePreferring, shuffle } from '../lib/util';
 import { EndCard } from './chrome';
 import { GuideHand, SwipeableCard } from './hint';
 
@@ -37,8 +39,12 @@ interface LookFindProps<C extends Card> {
   gameId: GameId;
   /** the deck to look through, and the things she is asked to find */
   cards: C[];
-  /** where the two wrong pictures of a find round come from (default: the deck) */
+  /** where the wrong pictures of a find round come from (default: the deck) */
   decoys?: Card[];
+  /** the find game's levels, easiest first */
+  levels: readonly FindLevel[];
+  /** two cards of the same kind — easily confused, so the hard levels pair them */
+  kin: (a: Card, b: Card) => boolean;
   /** how a card looks */
   Face: ComponentType<{ card: C }>;
   /** what the voice says for a card in the deck (default: just its name) */
@@ -52,6 +58,8 @@ export function LookFind<C extends Card>({
   gameId,
   cards,
   decoys = cards,
+  levels,
+  kin,
   Face,
   lookLine,
   findInstruction,
@@ -99,6 +107,8 @@ export function LookFind<C extends Card>({
           gameId={gameId}
           cards={cards}
           decoys={decoys}
+          levels={levels}
+          kin={kin}
           instruction={findInstruction}
           onHome={onHome}
         />
@@ -200,25 +210,41 @@ function FindGame({
   gameId,
   cards,
   decoys,
+  levels,
+  kin,
   instruction,
   onHome,
 }: {
   gameId: GameId;
   cards: Card[];
   decoys: Card[];
+  levels: readonly FindLevel[];
+  kin: (a: Card, b: Card) => boolean;
   instruction?: Phrase;
   onHome: () => void;
 }) {
   const { settings } = useStore();
-  const deal = () => {
+  const [ladder] = useState<Ladder>(() => ({
+    top: levels.length - 1,
+    chance: (level) => 1 / levels[level].options,
+  }));
+  const deal = (level: number) => {
+    const { options, alike } = levels[level];
     const target = pick(cards);
     const others = decoys.filter((c) => c.art !== target.art);
-    return { target, options: shuffle([target, ...sample(others, 2)]) };
+    const same = others.filter((c) => kin(c, target));
+    const different = others.filter((c) => !kin(c, target));
+    // the easy levels pick wrong pictures unlike the answer; the hard ones, its kin
+    const wrong = alike
+      ? samplePreferring(same, different, options - 1)
+      : samplePreferring(different, same, options - 1);
+    return { target, options: shuffle([target, ...wrong]) };
   };
-  const [board, setBoard] = useState(deal);
-  const { round, done, solved, misses, miss, solve, restart } = useRounds(gameId, FIND_ROUNDS, () =>
-    setBoard(deal()),
-  );
+  const { board, round, done, solved, misses, miss, solve, restart } = useRounds(gameId, {
+    rounds: FIND_ROUNDS,
+    ladder,
+    deal,
+  });
   const [wrong, flashWrong] = useFlash<string>();
   const layerRef = useRef<HTMLDivElement>(null);
   const optRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -269,7 +295,9 @@ function FindGame({
       >
         {question} 🔊
       </button>
-      <div className="relative grid grid-cols-3 gap-3 grow content-center max-w-md mx-auto w-full">
+      <div
+        className={`relative grid ${options.length === 3 ? 'grid-cols-3 max-w-md' : 'grid-cols-2 max-w-sm'} gap-3 grow content-center mx-auto w-full`}
+      >
         {options.map((c) => (
           <button
             key={c.art}
@@ -279,7 +307,7 @@ function FindGame({
             onClick={() => choose(c)}
             className={`sticker p-3 aspect-square flex items-center justify-center transition-transform active:scale-95 ${wrong === c.art ? 'anim-wiggle' : ''} ${misses >= 2 && c.art === target.art ? 'anim-hint' : ''}`}
           >
-            <Art id={c.art} size={92} />
+            <Art id={c.art} size={options.length === 3 ? 92 : 112} />
           </button>
         ))}
       </div>

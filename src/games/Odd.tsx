@@ -1,11 +1,12 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { Art, type ArtId } from '../art';
 import { CATEGORIES, COLORS, SHAPES, WORDS, type Category } from '../data/content';
+import { topLevel } from '../data/levels';
 import { chimeGood, speak } from '../lib/speech';
+import type { Ladder } from '../lib/skill';
 import { EndCard, GameShell } from '../components/chrome';
 import { pick, sample, shuffle } from '../lib/util';
 import { useFlash } from '../hooks/useFlash';
-import { useFrozenLevel } from '../hooks/useFrozenLevel';
 import { useInstruction } from '../hooks/useInstruction';
 import { useRounds } from '../hooks/useRounds';
 import { GuideHand } from '../components/hint';
@@ -22,6 +23,8 @@ import { GuideHand } from '../components/hint';
              (three animals and a fruit, all different pictures).
 */
 const ROUNDS = 5;
+/** one tile to find among three — among four at the top level */
+const LADDER: Ladder = { top: topLevel('odd'), chance: (level) => (level >= 3 ? 1 / 4 : 1 / 3) };
 
 interface Tile {
   key: string;
@@ -117,11 +120,17 @@ function build(level: number): RoundData {
 }
 
 export default function Odd({ onHome }: { onHome: () => void }) {
-  const level = useFrozenLevel('odd', 3);
-  const [data, setData] = useState(() => build(level));
-  const { round, done, solved, misses, miss, solve, restart } = useRounds('odd', ROUNDS, () =>
-    setData(build(level)),
-  );
+  const {
+    board: data,
+    level,
+    round,
+    done,
+    solved,
+    misses,
+    miss,
+    solve,
+    restart,
+  } = useRounds('odd', { rounds: ROUNDS, ladder: LADDER, deal: build });
   const [wrong, flashWrong] = useFlash<string>();
   const layerRef = useRef<HTMLDivElement>(null);
   const optRefs = useRef<Record<string, HTMLButtonElement | null>>({});

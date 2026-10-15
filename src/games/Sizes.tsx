@@ -1,13 +1,14 @@
 import { useRef, useState } from 'react';
 import { Art } from '../art';
 import { WORDS, type WordCard } from '../data/content';
+import { topLevel } from '../data/levels';
 import { chimeGood, speak } from '../lib/speech';
+import type { Ladder } from '../lib/skill';
 import { fitSizes, sizesFor, slotGapFor, staircaseSlots } from '../lib/seriation';
 import { EndCard, GameShell } from '../components/chrome';
 import { pick, shuffle } from '../lib/util';
 import { useElementSize } from '../hooks/useElementSize';
 import { useFlash } from '../hooks/useFlash';
-import { useFrozenLevel } from '../hooks/useFrozenLevel';
 import { useInstruction } from '../hooks/useInstruction';
 import { useRounds } from '../hooks/useRounds';
 import { useTimers } from '../hooks/useTimers';
@@ -21,6 +22,8 @@ import { GuideHand } from '../components/hint';
    appears, vanishes, or rearranges by itself; every change is caused by
    her hand and visible. */
 const ROUNDS = 4;
+/** one decision per item but the last (it can only go one place) */
+const LADDER: Ladder = { top: topLevel('sizes'), steps: (level) => sizesFor(level).length - 1 };
 const ROW_GAP = 26; // vertical gap between the dealt row and the answer line
 
 // choreography budget (ms): grow-in 500 → play → last glide 600 → bob 600
@@ -41,14 +44,16 @@ function deal(level: number): Board {
 type Phase = 'play' | 'celebrate' | 'exit';
 
 export default function Sizes({ onHome }: { onHome: () => void }) {
-  const level = useFrozenLevel('sizes', 2);
-  const [board, setBoard] = useState(() => deal(level));
   const [nextRank, setNextRank] = useState(0); // 0 = biggest
   const [phase, setPhase] = useState<Phase>('play');
-  const { round, done, misses, miss, solve, restart } = useRounds('sizes', ROUNDS, () => {
-    setBoard(deal(level));
-    setNextRank(0);
-    setPhase('play');
+  const { board, level, round, done, misses, miss, solve, restart } = useRounds('sizes', {
+    rounds: ROUNDS,
+    ladder: LADDER,
+    deal,
+    onDeal: () => {
+      setNextRank(0);
+      setPhase('play');
+    },
   });
   const [wrong, flashWrong] = useFlash<number>();
   const { later, clearAll } = useTimers();
@@ -166,11 +171,12 @@ export default function Sizes({ onHome }: { onHome: () => void }) {
                       }}
                       onClick={() => tap(rank)}
                       disabled={placed || phase !== 'play'}
-                      className={`absolute ${wrong === rank ? 'anim-wiggle' : ''} ${phase === 'play' && !placed && misses >= 2 && rank === nextRank ? 'anim-hint rounded-3xl' : ''}`}
+                      className={`absolute hit-pad ${wrong === rank ? 'anim-wiggle' : ''} ${phase === 'play' && !placed && misses >= 2 && rank === nextRank ? 'anim-hint rounded-3xl' : ''}`}
                       style={{
                         left: slot.x - s / 2,
                         top: placed ? rowH - s : fitted.sizes[0] - s,
                         zIndex: placed ? 1 : 0,
+                        ['--pad-x' as string]: `${slotGap / 2 - 1}px`,
                       }}
                       aria-label={`size ${rank}`}
                     >

@@ -71,7 +71,8 @@ describe('look → find', () => {
 
       fireEvent.click(screen.getByLabelText('again'));
       expect(screen.queryByLabelText('again')).not.toBeInTheDocument();
-      expect(options(container)).toHaveLength(3);
+      // five clean answers from a new child: the next sitting opens a level up
+      expect(options(container).length).toBeGreaterThan(2);
     });
 
     it('the answer starts to pulse after two misses — in both games', async () => {
@@ -79,7 +80,8 @@ describe('look → find', () => {
         [Words, WORDS, () => fireEvent.click(screen.getByText('விலங்குகள்'))],
         [Emotions, EMOTIONS, () => {}],
       ] as const) {
-        seedProfile({ settings: { sound: false } });
+        // three pictures (level 1), so there are two wrong ones to try
+        seedProfile({ settings: { sound: false, stageOverride: 1 } });
         const { container, unmount } = renderWithStore(<Game onHome={() => {}} />);
         enter();
         openFind();

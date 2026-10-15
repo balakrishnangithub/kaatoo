@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ACTIVITIES, MILESTONES } from '../data/content';
+import { LEVELS, topLevel } from '../data/levels';
+import { chooseLevel } from '../lib/skill';
+import { speakPair, watchVoices } from '../lib/speech';
 import { SESSION_MINUTES, useStore } from '../lib/store';
 import { isoDate, stageFromAge } from '../lib/age';
 import { HoldButton } from '../components/chrome';
@@ -103,10 +106,10 @@ function Settings() {
           className="w-full rounded-2xl border-3 border-plum/20 bg-white px-4 py-3 font-semibold text-lg text-plum outline-none focus:border-sage"
         />
         <div className="text-sm text-plum/60 font-semibold mt-1">
-          {s.ageText} — activities auto-adjust as she grows
+          {s.ageText} — sets where each game starts; her own play takes it from there
         </div>
       </Row>
-      <Row label="நிலை · stage">
+      <Row label="தொடக்க நிலை · starting point">
         <div className="flex flex-wrap gap-2">
           <button
             className={`btn-chunky !min-h-10 !px-3 text-sm ${auto ? 'bg-sage text-white' : ''}`}
@@ -125,7 +128,8 @@ function Settings() {
           ))}
         </div>
         <div className="text-sm text-plum/60 font-semibold mt-2">
-          Override only if she&apos;s ahead/behind — auto follows her age.
+          Where a game she has never played begins. After a few rounds each game follows her own
+          answers instead, up or down, with no age limit — so this rarely needs changing.
         </div>
       </Row>
       <Row label="அமர்வு நேரம் · session length">
@@ -153,6 +157,7 @@ function Settings() {
           {s.settings.sound ? 'ஒலி உண்டு · on' : 'அமைதி · off'}
         </button>
       </Row>
+      <VoiceCheck />
       <Row label="English echo">
         <button
           className={`btn-chunky ${s.settings.english ? 'bg-mint' : ''}`}
@@ -221,21 +226,79 @@ function Settings() {
   );
 }
 
+/** which voice this device speaks with — and how to add a Tamil one if it has none */
+function VoiceCheck() {
+  const s = useStore();
+  const [voices, setVoices] = useState<{
+    ta: SpeechSynthesisVoice | null;
+    en: SpeechSynthesisVoice | null;
+  } | null>(null);
+  useEffect(() => watchVoices(setVoices), []);
+  const ua = navigator.userAgent;
+  const apple = /iP(hone|ad|od)/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const android = /Android/.test(ua);
+  const windows = /Windows/.test(ua);
+  const mac = /Macintosh/.test(ua) && !apple;
+  return (
+    <Row label="குரல் · voice">
+      {voices === null ? null : voices.ta ? (
+        <p className="text-sm font-semibold text-plum/75">
+          Tamil voice: <b>{voices.ta.name}</b>
+          {!voices.ta.localService && ' — needs the internet'}
+        </p>
+      ) : (
+        <div className="text-sm font-semibold text-plum/75 space-y-1.5">
+          <p>
+            <b>No Tamil voice on this device yet</b> — the games still work, but the instructions
+            will be silent or read in another voice. To add one:
+          </p>
+          <p>
+            {android
+              ? 'Settings → General management → Text-to-speech → Preferred engine: Speech Services by Google → ⚙ → Install voice data → Tamil (India).'
+              : apple
+                ? 'Settings → Accessibility → Spoken Content → Voices → Tamil, if your iOS version lists it.'
+                : windows
+                  ? 'Windows: Settings → Time & language → Speech → Add voices → Tamil. In Microsoft Edge a Tamil voice also works while online.'
+                  : mac
+                    ? 'Mac: System Settings → Accessibility → Spoken Content → System voice → Manage Voices → Tamil, if listed.'
+                    : "Add a Tamil (India) text-to-speech voice in this device's settings."}
+          </p>
+        </div>
+      )}
+      <button
+        className="btn-chunky mt-2"
+        onClick={() =>
+          speakPair('வணக்கம்! விளையாடலாமா?', 'hello! shall we play?', s.settings.english)
+        }
+      >
+        ▶ listen
+      </button>
+      {!s.settings.sound && (
+        <div className="text-sm text-plum/60 font-semibold mt-2">Sound is off above.</div>
+      )}
+    </Row>
+  );
+}
+
 function Progress() {
   const s = useStore();
   return (
     <div className="anim-fade-up">
       <p className="text-sm text-plum/60 font-semibold mb-3">
-        Stored only in this browser — nothing leaves the device. Each game&apos;s level is set by
-        her <b>age stage</b>, then nudged up or down by her <b>recent first-try accuracy</b> (the
-        dots): mostly clean rounds → step up, mostly struggled → step down. Age also caps how far
-        content can go.
+        Stored only in this browser — nothing leaves the device. Each game&apos;s level follows{' '}
+        <b>her own rounds</b>: after every round the game updates how well it thinks she knows each
+        level, and deals the next one at the hardest level she should still get right about four
+        times in five. Clean rounds (the dots) step it up; a round that needed tries brings it back
+        down. Age only chose where each game started.
       </p>
       {ACTIVITIES.map((a) => {
         const p = s.progress[a.id];
-        const lv = s.levelFor(a.id, 3);
-        const skill = s.skillFor(a.id);
+        const names = LEVELS[a.id];
+        const skill = s.skillOf(a.id);
+        const lv = chooseLevel(skill, { top: topLevel(a.id) });
         const outcomes = (p?.outcomes ?? []).slice(-5);
+        const firstTry =
+          outcomes.length >= 3 ? outcomes.filter(Boolean).length / outcomes.length : null;
         return (
           <div key={a.id} className="sticker p-3 mb-3 flex items-center gap-3">
             <div
@@ -248,13 +311,19 @@ function Progress() {
               <div className="font-display font-bold text-plum leading-tight">
                 {a.ta} <span className="text-sm font-semibold text-plum/50">{a.en}</span>
               </div>
-              <div className="flex items-center gap-1 mt-1">
-                {[0, 1, 2, 3].map((i) => (
+              <div className="flex items-center gap-1 mt-1" aria-hidden>
+                {names.map((_, i) => (
                   <div
                     key={i}
                     className={`h-2.5 w-8 rounded-full ${i <= lv ? 'bg-sage' : 'bg-plum/10'}`}
                   />
                 ))}
+              </div>
+              <div className="text-xs font-semibold text-plum/65 mt-1">
+                level {lv + 1} of {names.length} · {names[lv]}
+                {skill.n > 0 && skill.u >= 0.5 && (
+                  <span className="text-plum/45"> · still finding her level</span>
+                )}
               </div>
               <div className="flex items-center gap-1 mt-1.5">
                 {outcomes.length > 0 ? (
@@ -268,9 +337,9 @@ function Progress() {
                 ) : (
                   <span className="text-[10px] font-semibold text-plum/40">not played yet</span>
                 )}
-                {skill.acc !== null && (
+                {firstTry !== null && (
                   <span className="text-[10px] font-bold text-plum/50 ml-1">
-                    first-try {Math.round(skill.acc * 100)}%
+                    first-try {Math.round(firstTry * 100)}%
                   </span>
                 )}
               </div>
@@ -367,14 +436,16 @@ function Why() {
       </div>
       <div className="sticker p-4">
         <div className="font-display font-bold text-plum text-lg">
-          Levels follow her, not the calendar alone
+          Levels follow her, not the calendar
         </div>
         <p>
-          Each game starts at her age stage, then adapts to live skill estimates: ~4 of the last 5
-          rounds solved on the first try → the challenge steps up; mostly struggled rounds → it
-          steps back down. Age still caps the ceiling, so a 2-year-old never sees content designed
-          for 5-year-olds (the zone of proximal development — challenge just ahead of skill, never
-          beyond reach).
+          Every game keeps a running estimate of what she can do, updated after each round (an
+          Elo-style rating, as in the Math Garden studies). The next round is dealt at the hardest
+          level she should still get right about four times in five — challenge just ahead of skill,
+          never beyond reach. Lucky guesses are allowed for (a right answer out of two pictures says
+          less than one out of four), every fourth round is an easy one so a tired moment isn&apos;t
+          mistaken for a harder level, and time away makes the estimate quicker to change again —
+          little ones grow fast. Age only decides where a new game begins.
         </p>
       </div>
       <div className="sticker p-4">

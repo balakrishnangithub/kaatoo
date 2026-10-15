@@ -1,18 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
 import { Art, type ArtId } from '../art';
 import { COLORS, NUMBERS, SHAPES } from '../data/content';
+import { topLevel } from '../data/levels';
 import { chimePop, speak } from '../lib/speech';
+import type { Ladder } from '../lib/skill';
 import { useStore } from '../lib/store';
 import { EndCard, GameShell } from '../components/chrome';
 import { HAND_FONT, pick } from '../lib/util';
 import { useElementSize } from '../hooks/useElementSize';
-import { useFrozenLevel } from '../hooks/useFrozenLevel';
 import { useInstruction } from '../hooks/useInstruction';
+import { useSkill } from '../hooks/useSkill';
 import { useTimers } from '../hooks/useTimers';
 import { GuideHand } from '../components/hint';
 
 const TOTAL = 12;
 const MAX_ON_SCREEN = 5;
+/** the sitting is the round: its score is the share of bubbles she popped */
+const LADDER: Ladder = { top: topLevel('bubbles') };
+/** per level: bubble diameter (px) and seconds to float across — big and slow first */
+const FIELD = [
+  { size: [110, 150], dur: [13, 16] },
+  { size: [100, 140], dur: [11.5, 14.5] },
+  { size: [88, 128], dur: [10, 13] },
+  { size: [80, 116], dur: [8, 11] },
+] as const;
+const between = ([lo, hi]: readonly [number, number]) => lo + Math.random() * (hi - lo);
 const PARAMS =
   typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search)
@@ -33,11 +45,12 @@ interface B {
 }
 
 export default function Bubbles({ onHome }: { onHome: () => void }) {
-  const { recordWin, recordOutcome } = useStore();
-  // frozen for the sitting: the last bubble of a round is what records the
-  // outcome, and a level that changed right then used to restart the spawn
-  // effect below — disarming the timer that shows the end card, for good
-  const level = useFrozenLevel('bubbles', 3);
+  const { recordWin } = useStore();
+  const skill = useSkill('bubbles', LADDER);
+  // one level for the whole field, chosen as it opens and again on "again".
+  // A ref, not state: the spawner below is armed once, and a level that
+  // re-armed it would disarm the timer that shows the end card, for good
+  const levelRef = useRef(skill.opening);
   const [bubbles, setBubbles] = useState<B[]>([]);
   const [resolved, setResolved] = useState(0); // popped OR floated away
   const [done, setDone] = useState(false);
@@ -59,11 +72,12 @@ export default function Bubbles({ onHome }: { onHome: () => void }) {
 
   function makeBubble(lv: number): B {
     idRef.current += 1;
+    const field = FIELD[lv];
     const base: Omit<B, 'art' | 'num' | 'label' | 'tint'> = {
       id: idRef.current,
       x: 4 + Math.random() * 76,
-      size: 84 + Math.random() * 44,
-      dur: FAST ? 4 + Math.random() * 1.5 : 10 + Math.random() * 4,
+      size: between(field.size),
+      dur: FAST ? 4 + Math.random() * 1.5 : between(field.dur),
       popped: false,
     };
     if (lv === 0) {
@@ -102,7 +116,9 @@ export default function Bubbles({ onHome }: { onHome: () => void }) {
     setResolved(n);
     if (n >= TOTAL) {
       recordWin('bubbles');
-      recordOutcome('bubbles', poppedCount.current >= TOTAL / 2);
+      // the share she popped is the score; popping half counts as a good field
+      const share = poppedCount.current / TOTAL;
+      skill.record(levelRef.current, share, { clean: share >= 0.5 });
       later(() => setDone(true), popped ? 450 : 600);
     }
   };
@@ -116,7 +132,7 @@ export default function Bubbles({ onHome }: { onHome: () => void }) {
     spawnedRef.current += 1;
     liveRef.current += 1;
     const round = roundRef.current;
-    const b = makeBubble(level);
+    const b = makeBubble(levelRef.current);
     setBubbles((bs) => [...bs, b]);
     // Backstop: even if the animationend event is swallowed (power-saving,
     // background tab, browser quirk), the bubble ALWAYS resolves.
@@ -145,6 +161,7 @@ export default function Bubbles({ onHome }: { onHome: () => void }) {
     liveRef.current = 0;
     poppedCount.current = 0;
     resolvedIds.current.clear();
+    levelRef.current = skill.next(levelRef.current); // the next field: a step at most from this one
     setBubbles([]);
     setResolved(0);
     setDone(false);

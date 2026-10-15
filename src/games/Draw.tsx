@@ -1,26 +1,37 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Art, type ArtId } from '../art';
 import { COLORS, NUMBERS, PRAISE_EFFORT, SHAPES } from '../data/content';
+import { topLevel } from '../data/levels';
 import { chimeGood, chimeSoft, chimeTap, speak, speakPair } from '../lib/speech';
+import type { Ladder } from '../lib/skill';
 import { judgeStroke, judgeGlyph, type GuideBox, type Pt } from '../lib/trace';
 import { useStore } from '../lib/store';
 import { EndCard, GameShell } from '../components/chrome';
 import { HAND_FONT, pick } from '../lib/util';
 import { useGuide } from '../hooks/useGuide';
+import { useSkill } from '../hooks/useSkill';
 import { useTimers } from '../hooks/useTimers';
 import { HandSvg } from '../components/hint';
 
 type Tool = 'draw' | ArtId;
 
-/* tracing content carries an internal stage: a 2-year-old meets circles, squares
-   and the first glyphs; stars, hearts and Latin letters arrive later */
+/* what she is invited to trace, by level: circles, squares and the first
+   glyphs first; stars, hearts and Latin letters once her tracing is ready */
 const ART_LADDER: ArtId[][] = [
-  ['circle', 'square', 'triangle'], // stage 0 · 2-3y
-  ['rect', 'oval'], // stage 1 · 3-4y
-  ['starshape', 'heart'], // stage 2 · 4-5y
-  [], // stage 3 · 5-6y
+  ['circle', 'square', 'triangle'],
+  ['rect', 'oval'],
+  ['starshape', 'heart'],
+  [],
 ];
 const GLYPH_LADDER: string[][] = [['1', '2', 'அ'], ['3', '4', '5', 'ஆ'], ['A', 'B', 'C'], ['இ']];
+/** a traced guide is one round; there is no luck in tracing */
+const LADDER: Ladder = { top: topLevel('draw') };
+/** her level's new guides first, then everything she has met before */
+function guidesFor(level: number): string[] {
+  const out: string[] = [];
+  for (let lv = level; lv >= 0; lv--) out.push(...ART_LADDER[lv], ...GLYPH_LADDER[lv]);
+  return out;
+}
 const STAMPS: ArtId[] = ['star', 'heart', 'flower', 'sun'];
 const INKS = ['#563E79', ...COLORS.map((c) => c.hex)];
 
@@ -182,7 +193,9 @@ function TraceDemo({
 }
 
 export default function Draw({ onHome }: { onHome: () => void }) {
-  const { expired, recordWin, recordOutcome, settings, stage } = useStore();
+  const { expired, recordWin, settings } = useStore();
+  const skill = useSkill('draw', LADDER);
+  const [level, setLevel] = useState(skill.opening);
   // the demonstrating hand fades with practice, like the guiding hand elsewhere
   const { plays, enabled: demoAllowed } = useGuide('draw');
   const { later } = useTimers();
@@ -201,6 +214,7 @@ export default function Draw({ onHome }: { onHome: () => void }) {
   const [demoNonce, setDemoNonce] = useState(0);
   const strokesRef = useRef<Map<number, Pt[]>>(new Map()); // one stroke per finger (multi-touch)
   const scribblesRef = useRef(0); // consecutive free-scribbles this guide
+  const closesRef = useRef(0); // "almost" tries at this guide — the round's score
 
   // drawing has no score — but when the session timer expires we gently end
   useEffect(() => {
@@ -216,7 +230,9 @@ export default function Draw({ onHome }: { onHome: () => void }) {
   useEffect(() => {
     const canvas = canvasRef.current!;
     const fit = () => {
-      const dpr = window.devicePixelRatio || 1;
+      // crayon lines look the same at 2× — and a 3–4× canvas (iPhone, S23 Ultra)
+      // costs a mid-range phone four times the memory and fill for nothing
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
       const r = canvas.getBoundingClientRect();
       setPaper({ w: r.width, h: r.height });
       const img = canvas.width
@@ -236,12 +252,8 @@ export default function Draw({ onHome }: { onHome: () => void }) {
     return () => ro.disconnect();
   }, []);
 
-  // guides filtered by her stage — content carries its own minimum age
-  const guides = useMemo<string[]>(() => {
-    const out: string[] = [];
-    for (let st = 0; st <= stage; st++) out.push(...ART_LADDER[st], ...GLYPH_LADDER[st]);
-    return out;
-  }, [stage]);
+  // the guides her tracing has earned — content follows her level, not her age
+  const guides = useMemo(() => guidesFor(level), [level]);
   const guideCount = guides.length;
   const current = guides[guideIdx % guideCount];
   const guide = current && GUIDE_PATHS[current] ? (current as ArtId) : null;
@@ -295,6 +307,7 @@ export default function Draw({ onHome }: { onHome: () => void }) {
   // name the guide + replay the demo when it changes
   useEffect(() => {
     scribblesRef.current = 0;
+    closesRef.current = 0;
     if (!guideOn || done) return; // …and never behind the end card
     if (guide) {
       const def = SHAPES.find((s) => s.id === guide);
@@ -309,7 +322,7 @@ export default function Draw({ onHome }: { onHome: () => void }) {
       setDemoNonce((n) => n + 1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guideIdx, guideOn]);
+  }, [guideIdx, guideOn, level]);
 
   const pos = (e: React.PointerEvent) => {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -322,18 +335,29 @@ export default function Draw({ onHome }: { onHome: () => void }) {
     setStamps([]);
   };
 
+  /** on to another guide: the next one at this level, or the first of a new level */
+  const goTo = (next: number) => {
+    if (next !== level) {
+      setLevel(next);
+      setGuideIdx(0);
+    } else setGuideIdx((g) => (g + 1) % guideCount);
+  };
+
   const complete = () => {
     setCelebrated(true);
     chimeGood();
     recordWin('draw');
-    recordOutcome('draw', true);
+    // a guide traced is a round: in full on the first real try, in part after
+    // "almost" tries — recorded now, so it counts even if she leaves mid-bloom
+    skill.record(level, closesRef.current === 0 ? 1 : 0.6);
+    const next = skill.next(level);
     const praise = pick(PRAISE_EFFORT);
     speakPair(praise.ta, praise.en, settings.english);
     // through `later`: if she goes home mid-celebration, this must not fire
     // into a canvas that no longer exists
     later(() => {
       clear();
-      setGuideIdx((g) => (g + 1) % guideCount);
+      goTo(next);
       setCelebrated(false);
     }, 2400);
   };
@@ -388,6 +412,7 @@ export default function Draw({ onHome }: { onHome: () => void }) {
     if (verdict === 'match') {
       complete();
     } else if (verdict === 'close') {
+      closesRef.current += 1;
       chimeSoft(); // recognisable effort — gentle encouragement, no reward yet
       speak('கிட்டத்தட்ட முடிந்தது!', 'ta'); // "almost there!"
     } else {
@@ -533,7 +558,12 @@ export default function Draw({ onHome }: { onHome: () => void }) {
             <button
               className="btn-chunky !min-h-11 text-sm"
               onClick={() => {
-                setGuideIdx((g) => (g + 1) % guideCount);
+                // moving on from a guide she really tried and could not finish is
+                // a round, and it counts; skipping past one she only scribbled on
+                // (or never touched) is just choosing — free drawing is never scored
+                const tried = guideOn && !celebrated && closesRef.current > 0;
+                if (tried) skill.record(level, 0);
+                goTo(tried ? skill.next(level) : level);
                 setGuideOn(true);
                 chimeTap();
               }}

@@ -6,6 +6,7 @@ import {
   artOf,
   flush,
   installFakeSpeech,
+  nextLevel,
   renderWithStore,
   saved,
   seedProfile,
@@ -40,7 +41,7 @@ describe('Shadow', () => {
     const { container } = renderWithStore(<Shadow onHome={() => {}} />);
     const before = artOf(picture(container));
     fireEvent.click(rightShadow(container));
-    expect(saved().progress.shadow.outcomes).toEqual([1, 1, 1, 1]); // the level did tip
+    expect(nextLevel('shadow', 0, 2)).toBe(1); // the level did tip
     await flush(50);
     expect(artOf(picture(container))).toBe(before);
     expect(revealed(container).length).toBe(1); // still showing what she found

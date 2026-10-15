@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
 import { registerServiceWorker } from './registerSW.ts';
+import { installAudioUnlock } from './lib/audio.ts';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -11,3 +12,4 @@ createRoot(document.getElementById('root')!).render(
 );
 
 registerServiceWorker();
+installAudioUnlock();

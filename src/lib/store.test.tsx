@@ -4,11 +4,20 @@ import { screen, fireEvent, act } from '@testing-library/react';
 import { useStore, useTimeLeft } from './store';
 import { speak } from './speech';
 import { birthDateFor } from './age';
+import { chooseLevel, updateSkill } from './skill';
 import { flush, installFakeSpeech, renderWithStore, saved, seedProfile } from '../test/helpers';
 
 /** minimal harness component exposing the bits of the store under test */
 function Probe() {
   const s = useStore();
+  // what a game does: open at the estimate's level, record each round into it
+  const level = chooseLevel(s.skillOf('bubbles'), { top: 3 });
+  const round = (score: number) =>
+    s.recordRound(
+      'bubbles',
+      score === 1,
+      updateSkill(s.skillOf('bubbles'), { level, score, chance: 0 }, Date.now()),
+    );
   return (
     <div>
       <span data-testid="name">{s.settings.name}</span>
@@ -16,10 +25,10 @@ function Probe() {
       <span data-testid="phase">{s.phase}</span>
       <span data-testid="expired">{String(s.expired)}</span>
       <span data-testid="plays">{s.progress.bubbles?.plays ?? 0}</span>
-      <span data-testid="level">{s.levelFor('bubbles', 3)}</span>
+      <span data-testid="level">{level}</span>
       <button onClick={() => s.recordWin('bubbles')}>win</button>
-      <button onClick={() => s.recordOutcome('bubbles', true)}>clean</button>
-      <button onClick={() => s.recordOutcome('bubbles', false)}>struggle</button>
+      <button onClick={() => round(1)}>clean</button>
+      <button onClick={() => round(0)}>struggle</button>
       <button onClick={() => s.goRest()}>rest</button>
       <button onClick={() => s.wake()}>wake</button>
       <button onClick={() => s.updateSettings({ sound: !s.settings.sound })}>sound</button>
@@ -113,18 +122,46 @@ describe('store — persistence & skill engine', () => {
     expect(screen.getByTestId('phase').textContent).toBe('play');
   });
 
-  it('sustained clean play raises difficulty, struggling lowers it — within the age cap', () => {
+  const level = () => screen.getByTestId('level').textContent;
+
+  it('a game she has never played starts where her age — or the parent — says', () => {
     renderWithStore(<Probe />);
-    // stage 0 → base level 0, cap 1
-    expect(screen.getByTestId('level').textContent).toBe('0');
-    // 4 clean rounds of the last 5 → step up (but never beyond the age cap of 1)
-    for (let i = 0; i < 4; i++) fireEvent.click(screen.getByText('clean'));
-    expect(screen.getByTestId('level').textContent).toBe('1');
-    // struggling drops it right back down
+    expect(level()).toBe('0'); // a two-year-old
+    seedProfile({ settings: { stageOverride: 2 } });
+    renderWithStore(<Probe />);
+    expect(screen.getAllByTestId('level')[1].textContent).toBe('2');
+  });
+
+  it('her rounds, not her age, set the level — with no age ceiling', () => {
+    renderWithStore(<Probe />);
+    for (let i = 0; i < 20; i++) fireEvent.click(screen.getByText('clean'));
+    expect(level()).toBe('3'); // a two-year-old at the top level
+    for (let i = 0; i < 8; i++) fireEvent.click(screen.getByText('struggle'));
+    expect(level()).toBe('0');
+  });
+
+  it('each round is saved: the estimate, and the dot the parents see', () => {
+    renderWithStore(<Probe />);
+    fireEvent.click(screen.getByText('clean'));
     fireEvent.click(screen.getByText('struggle'));
-    fireEvent.click(screen.getByText('struggle'));
-    fireEvent.click(screen.getByText('struggle'));
-    expect(screen.getByTestId('level').textContent).toBe('0');
+    expect(saved().progress.bubbles.outcomes).toEqual([1, 0]);
+    expect(saved().progress.bubbles.skill.n).toBe(2);
+  });
+
+  it('a game played under the old rules starts exactly where those rules had her', () => {
+    // a two-year-old with four clean rounds: the old rules had stepped her up to 1
+    seedProfile({ progress: { bubbles: { plays: 2, wins: 2, outcomes: [1, 1, 1, 1] } } });
+    renderWithStore(<Probe />);
+    expect(level()).toBe('1');
+  });
+
+  it('…including a step down for a child who was struggling', () => {
+    seedProfile({
+      settings: { stageOverride: 2 },
+      progress: { bubbles: { plays: 2, wins: 2, outcomes: [1, 0, 0, 0] } },
+    });
+    renderWithStore(<Probe />);
+    expect(level()).toBe('1');
   });
 });
 

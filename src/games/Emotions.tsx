@@ -2,7 +2,11 @@ import { Art } from '../art';
 import { EMOTIONS, type EmotionDef } from '../data/content';
 import { GameShell } from '../components/chrome';
 import { LookFind } from '../components/lookfind';
+import { FEELING_FIND } from '../data/levels';
 import { HAND_FONT } from '../lib/util';
+
+/** feelings whose faces look alike — happy and surprised, sad and angry, sleepy and calm */
+const family = (art: string) => EMOTIONS.find((e) => e.art === art)?.family;
 
 export default function Emotions({ onHome }: { onHome: () => void }) {
   return (
@@ -11,6 +15,8 @@ export default function Emotions({ onHome }: { onHome: () => void }) {
         <LookFind
           gameId="emotions"
           cards={EMOTIONS}
+          levels={FEELING_FIND}
+          kin={(a, b) => family(a.art) === family(b.art)}
           Face={EmoFace}
           // each feeling comes with a little sentence about when we feel it
           lookLine={(emo) => ({ ta: `${emo.ta}. ${emo.line}`, en: emo.en })}

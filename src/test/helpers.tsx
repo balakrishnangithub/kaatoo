@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { vi } from 'vitest';
 import { Art, type ArtId } from '../art';
 import { birthDateFor } from '../lib/age';
+import { abilityAt, chooseLevel, UP } from '../lib/skill';
 import { StoreProvider, type ActProg, type Settings } from '../lib/store';
 
 /** Shared test helpers — one copy of the things every game test needs. */
@@ -38,10 +39,19 @@ export function seedProfile({
 /** what the app has persisted so far */
 export const saved = () => JSON.parse(localStorage.getItem('kaatoo-v1') ?? '{}');
 
-/** recent outcomes one clean round short of a level-up — the next one tips it */
-export const aboutToLevelUp = (gameId: string) => ({
-  [gameId]: { plays: 3, wins: 3, outcomes: [1, 1, 1] },
+/** a settled skill one clean round short of stepping up from `level` — the next clean round tips it */
+export const aboutToLevelUp = (gameId: string, level = 0) => ({
+  [gameId]: {
+    plays: 3,
+    wins: 3,
+    skill: { theta: abilityAt(level + 1, UP) - 0.05, u: 0, n: 20, at: 0 },
+  },
 });
+
+/** the level the saved estimate deals after a round at `from` (`top`: the game's hardest) */
+export function nextLevel(gameId: string, from: number, top = 3): number {
+  return chooseLevel(saved().progress[gameId].skill, { top }, from);
+}
 
 export function renderWithStore(ui: ReactNode) {
   return render(<StoreProvider>{ui}</StoreProvider>);

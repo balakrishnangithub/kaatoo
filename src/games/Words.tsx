@@ -4,8 +4,12 @@ import { CATEGORIES, WORDS, type Category, type WordCard } from '../data/content
 import { chimeTap, speak } from '../lib/speech';
 import { GameShell } from '../components/chrome';
 import { LookFind } from '../components/lookfind';
+import { WORD_FIND } from '../data/levels';
 import { HAND_FONT } from '../lib/util';
 import { useInstruction } from '../hooks/useInstruction';
+
+/** words in one category — cat and lion are harder to tell apart than cat and bus */
+const category = (art: string) => WORDS.find((w) => w.art === art)?.cat;
 
 export default function Words({ onHome }: { onHome: () => void }) {
   const [cat, setCat] = useState<Category | null>(null);
@@ -20,6 +24,8 @@ export default function Words({ onHome }: { onHome: () => void }) {
           gameId="words"
           cards={WORDS.filter((w) => w.cat === cat)}
           decoys={WORDS}
+          levels={WORD_FIND}
+          kin={(a, b) => category(a.art) === category(b.art)}
           Face={WordFace}
           onHome={onHome}
         />

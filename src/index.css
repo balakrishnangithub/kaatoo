@@ -148,6 +148,16 @@ textarea {
 .anim-pop {
   animation: pop-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
 }
+
+/* a bigger finger target than the picture: an invisible margin that reaches
+   into the gaps around it (the item must be positioned). --pad-x is how far
+   it reaches sideways: half the gap, so neighbours never overlap. Used where a small
+   picture is the point — the smallest of five sizes is ~30px on a phone. */
+.hit-pad::before {
+  content: '';
+  position: absolute;
+  inset: -10px calc(-1 * var(--pad-x, 6px));
+}
 .anim-float {
   animation: floaty 5.5s ease-in-out infinite;
 }

@@ -27,3 +27,8 @@ export function pick<T>(arr: T[]): T {
 export function sample<T>(arr: T[], n: number): T[] {
   return shuffle(arr).slice(0, n);
 }
+
+/** n distinct random elements, taken from `first` before any from `then` */
+export function samplePreferring<T>(first: T[], then: T[], n: number): T[] {
+  return [...shuffle(first), ...shuffle(then)].slice(0, n);
+}

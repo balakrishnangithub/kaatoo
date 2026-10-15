@@ -113,6 +113,8 @@ export interface EmotionDef {
   art: ArtId;
   ta: string;
   en: string;
+  /** feelings in one family have look-alike faces — the hardest to tell apart */
+  family: 'bright' | 'upset' | 'quiet';
   line: string;
   lineEn: string;
 }
@@ -121,6 +123,7 @@ export const EMOTIONS: EmotionDef[] = [
     art: 'face_happy',
     ta: 'சந்தோஷம்',
     en: 'happy',
+    family: 'bright',
     line: 'நண்பர்களுடன் விளையாடும்போது சந்தோஷம்',
     lineEn: 'happy when we play together',
   },
@@ -128,6 +131,7 @@ export const EMOTIONS: EmotionDef[] = [
     art: 'face_sad',
     ta: 'சோகம்',
     en: 'sad',
+    family: 'upset',
     line: 'பொம்மை உடைந்தால் சோகம் வரும்',
     lineEn: 'sad when a toy breaks',
   },
@@ -135,6 +139,7 @@ export const EMOTIONS: EmotionDef[] = [
     art: 'face_angry',
     ta: 'கோபம்',
     en: 'angry',
+    family: 'upset',
     line: 'கோபம் வந்தால் மூச்சை மெதுவாக விடு',
     lineEn: 'when angry, breathe slowly',
   },
@@ -142,6 +147,7 @@ export const EMOTIONS: EmotionDef[] = [
     art: 'face_surprised',
     ta: 'ஆச்சரியம்',
     en: 'surprised',
+    family: 'bright',
     line: 'புதிய விஷயம் கண்டால் ஆச்சரியம்',
     lineEn: 'surprised by something new',
   },
@@ -149,6 +155,7 @@ export const EMOTIONS: EmotionDef[] = [
     art: 'face_sleepy',
     ta: 'தூக்கம்',
     en: 'sleepy',
+    family: 'quiet',
     line: 'தூக்கம் வந்தால் ஓய்வு எடு',
     lineEn: 'sleepy means time to rest',
   },
@@ -156,6 +163,7 @@ export const EMOTIONS: EmotionDef[] = [
     art: 'face_calm',
     ta: 'அமைதி',
     en: 'calm',
+    family: 'quiet',
     line: 'மெதுவாக மூச்சு விட்டால் அமைதி',
     lineEn: 'slow breaths make us calm',
   },

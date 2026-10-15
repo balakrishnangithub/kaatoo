@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Art, type ArtId } from '../art';
 import { COLORS, SHAPES, WORDS } from '../data/content';
+import { topLevel } from '../data/levels';
 import { chimeGood, speak } from '../lib/speech';
+import type { Ladder } from '../lib/skill';
 import { EndCard, GameShell } from '../components/chrome';
 import { sample, shuffle } from '../lib/util';
 import { useFlash } from '../hooks/useFlash';
-import { useFrozenLevel } from '../hooks/useFrozenLevel';
 import { useInstruction } from '../hooks/useInstruction';
 import { useRounds } from '../hooks/useRounds';
 import { GuideHand } from '../components/hint';
@@ -30,6 +31,8 @@ interface Bin {
 
 const ROUNDS = 3;
 const ROUND_ITEMS = 6;
+/** every item is its own decision */
+const LADDER: Ladder = { top: topLevel('sort'), steps: () => ROUND_ITEMS };
 
 function buildRound(level: number): {
   items: Item[];
@@ -95,16 +98,27 @@ function buildRound(level: number): {
 }
 
 export default function Sort({ onHome }: { onHome: () => void }) {
-  const level = useFrozenLevel('sort', 3);
-  const [data, setData] = useState(() => buildRound(level));
   const [placed, setPlaced] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  // a wrong basket counts for the whole round — it drives both the skill
-  // signal and the corrective guide hand
-  const { round, done, solved, misses, miss, solve, restart } = useRounds('sort', ROUNDS, () => {
-    setData(buildRound(level));
-    setPlaced([]);
-    setSelected(null);
+  // each wrong basket costs the round a share of its score, and drives the
+  // corrective guide hand
+  const {
+    board: data,
+    round,
+    done,
+    solved,
+    misses,
+    miss,
+    solve,
+    restart,
+  } = useRounds('sort', {
+    rounds: ROUNDS,
+    ladder: LADDER,
+    deal: buildRound,
+    onDeal: () => {
+      setPlaced([]);
+      setSelected(null);
+    },
   });
   const [wrongBin, flashWrongBin] = useFlash<string>();
   // drag state: pointer down starts a potential drag; movement turns it real

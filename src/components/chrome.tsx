@@ -159,7 +159,7 @@ export function EndCard({ onAgain, onHome }: { onAgain: () => void; onHome: () =
   }, []);
 
   return (
-    <div className="absolute inset-0 z-20 flex items-center justify-center bg-cream/85 backdrop-blur-sm p-6">
+    <div className="absolute inset-0 z-20 flex items-center justify-center bg-cream/90 p-6">
       <div className="sticker anim-pop w-full max-w-sm p-8 text-center">
         <div className="mx-auto w-24 h-24 anim-float">
           <Art id="star" size={96} />

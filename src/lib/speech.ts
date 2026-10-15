@@ -2,6 +2,8 @@
 // Tamil-first spoken output via the device speech synthesizer; soft synthesized
 // chimes via WebAudio (no files, no ads, no loud reward sounds).
 
+import { audioOut, setAudible } from './audio';
+
 type Lang = 'ta' | 'en';
 
 let voicesReady: SpeechSynthesisVoice[] = [];
@@ -18,7 +20,9 @@ if ('speechSynthesis' in window) {
 
 function pickVoice(lang: Lang): SpeechSynthesisVoice | null {
   if (!voicesReady.length) refreshVoices();
-  const vs = voicesReady;
+  // offline, a cloud voice (Edge's "Online (Natural)" ones) cannot speak — use one on the device
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  const vs = offline ? voicesReady.filter((v) => v.localService) : voicesReady;
   const find = (fn: (v: SpeechSynthesisVoice) => boolean) => vs.find(fn) ?? null;
   if (lang === 'ta') {
     return (
@@ -65,6 +69,7 @@ export function hush() {
 
 export function setMuted(m: boolean) {
   muted = m;
+  setAudible(!m);
   if (m) hush();
 }
 
@@ -159,24 +164,10 @@ export function speakSeq(
 }
 
 // ---------------- gentle tones ----------------
-let ctx: AudioContext | null = null;
-function ac(): AudioContext | null {
-  try {
-    if (!ctx)
-      ctx = new (
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-      )();
-    if (ctx.state === 'suspended') void ctx.resume();
-    return ctx;
-  } catch {
-    return null;
-  }
-}
-
 function tone(freq: number, at: number, dur = 0.22, type: OscillatorType = 'sine', vol = 0.16) {
-  const c = ac();
-  if (!c || muted) return;
+  const a = audioOut();
+  if (!a) return;
+  const { c, out } = a;
   const t = c.currentTime + at;
   const o = c.createOscillator();
   const g = c.createGain();
@@ -185,7 +176,7 @@ function tone(freq: number, at: number, dur = 0.22, type: OscillatorType = 'sine
   g.gain.setValueAtTime(0.0001, t);
   g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g).connect(c.destination);
+  o.connect(g).connect(out);
   o.start(t);
   o.stop(t + dur + 0.05);
 }
@@ -206,4 +197,29 @@ export function chimePop() {
 /** page turn / card flip */
 export function chimeTap() {
   tone(660, 0, 0.07, 'sine', 0.06);
+}
+
+/**
+ * Which voices this device will use — for the parents' corner. Voice lists
+ * arrive late on some browsers, so `onChange` is called again when they do.
+ * Returns an unsubscribe function.
+ */
+export function watchVoices(
+  onChange: (v: { ta: SpeechSynthesisVoice | null; en: SpeechSynthesisVoice | null }) => void,
+): () => void {
+  if (!('speechSynthesis' in window)) {
+    onChange({ ta: null, en: null });
+    return () => {};
+  }
+  const report = () => {
+    refreshVoices();
+    onChange({ ta: pickVoice('ta'), en: pickVoice('en') });
+  };
+  report();
+  window.speechSynthesis.addEventListener?.('voiceschanged', report);
+  const late = window.setTimeout(report, 800);
+  return () => {
+    window.speechSynthesis.removeEventListener?.('voiceschanged', report);
+    window.clearTimeout(late);
+  };
 }

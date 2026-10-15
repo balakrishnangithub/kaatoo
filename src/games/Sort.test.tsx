@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent } from '@testing-library/react';
 import Sort from './Sort';
 import { COLORS } from '../data/content';
-import { aboutToLevelUp, flush, renderWithStore, saved, seedProfile } from '../test/helpers';
+import {
+  aboutToLevelUp,
+  flush,
+  nextLevel,
+  renderWithStore,
+  saved,
+  seedProfile,
+} from '../test/helpers';
 
 const baskets = (c: HTMLElement) => [...c.querySelectorAll('[data-bin]')] as HTMLElement[];
 /** the items still waiting to be sorted */
@@ -44,7 +51,7 @@ describe('Sort', () => {
     expect(sortedChips(container)).toBe(1);
   });
 
-  it('a level-up on the last item never re-deals the baskets mid-celebration', async () => {
+  it('a level-up on the last item waits for the next round — never re-deals mid-celebration', async () => {
     seedProfile({ settings: { sound: false }, progress: aboutToLevelUp('sort') });
     const { container } = renderWithStore(<Sort onHome={() => {}} />);
     for (let n = 0; n < 6; n++) {
@@ -52,14 +59,15 @@ describe('Sort', () => {
       tapItem(item);
       fireEvent.click(ownBasket(container, item));
     }
-    expect(saved().progress.sort.outcomes).toEqual([1, 1, 1, 1]); // the level did tip
+    expect(saved().progress.sort.outcomes).toEqual([1]);
+    expect(nextLevel('sort', 0)).toBe(1); // the level did tip
     await flush(50);
     // her finished baskets stay as she left them until the round moves on
     expect(tray(container)).toHaveLength(0);
     expect(sortedChips(container)).toBe(6);
     await flush(700);
     expect(tray(container)).toHaveLength(6); // …and then a fresh round arrives
-    expect(baskets(container)).toHaveLength(2); // still two colours: same level this sitting
+    expect(baskets(container)).toHaveLength(3); // …at the new level: three colours
   });
 
   it('a quick drag-and-drop leaves no ghost stuck to the screen', async () => {

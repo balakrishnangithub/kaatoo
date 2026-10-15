@@ -31,7 +31,7 @@ engineered to be easy to put down:
 
 ## What's inside
 
-Ten activities, each adaptive to the child's age and demonstrated skill:
+Ten activities, each adapting to what the child can actually do:
 
 | Game                | What it teaches                                                                         |
 | ------------------- | --------------------------------------------------------------------------------------- |
@@ -55,8 +55,18 @@ Design details worth knowing:
   attempt, or idle confusion) and fades away as the child succeeds.
 - **Multi-touch drawing** — every finger draws its own stroke, just like a real
   crayon on paper.
-- **Dynamic difficulty** — age sets a soft ceiling; recent clean rounds nudge
-  the level up or down inside that band (zone of proximal development).
+- **Difficulty that follows her, not her age** — every game keeps a running
+  skill estimate (Elo-style, corrected for lucky guesses), updated after each
+  round, and deals the next round at the hardest level she should still get
+  right about four times in five. Age only picks where a new game starts;
+  there is no age ceiling. Every fourth round is an easy one, mashing counts
+  for less, and time away makes the estimate quick to move again
+  (`src/lib/skill.ts`).
+- **Runs on modest hardware** — no blur or heavy effects behind overlays, a
+  drawing canvas capped at 2× resolution, one shared audio output with a soft
+  limiter (no crackle on phone speakers), sound unlocked on the first touch,
+  and on iPhone it plays through the silent switch. The parents' corner shows
+  which Tamil voice the device has, and how to add one.
 - **Built for small hands** — tap, swipe, and drag all work everywhere; swiping
   a card reveals the next card underneath it.
 
@@ -108,11 +118,12 @@ src/
 │   └── lookfind.tsx      the "look, then find" activity behind Words and Emotions
 ├── data/
 │   ├── content.ts        every Tamil word, colour, shape, number, praise phrase
+│   ├── levels.ts         what each level of each game asks of her
 │   └── content.test.ts   integrity guard: every card points at artwork that exists
 ├── games/                the ten activities — one file each
 ├── hooks/
 │   ├── useRounds.ts      the round lifecycle every tap-choice game shares
-│   ├── useFrozenLevel.ts difficulty level, read once per sitting
+│   ├── useSkill.ts       a game's live skill estimate: open, record, next level
 │   ├── useTimers.ts      timeouts that cannot outlive the screen
 │   ├── useFlash.ts       a value that clears itself (the wrong-tap wiggle)
 │   ├── useGuide.ts       how much help she still gets (the adaptive fade)
@@ -120,7 +131,9 @@ src/
 │   └── useInstruction.ts spoken instruction line for a game
 ├── lib/
 │   ├── age.ts            age → developmental stage
+│   ├── skill.ts          the skill model: estimate, update, choose the next level
 │   ├── store.tsx         settings, progress, session timer (localStorage only)
+│   ├── audio.ts          the shared WebAudio output: limiter, unlock on first touch
 │   ├── speech.ts         Tamil-first speech, chimes, sequenced utterances
 │   ├── trace.ts          stroke/shape/glyph classifier for the drawing game
 │   ├── seriation.ts      big-to-small layout maths for the sizes game

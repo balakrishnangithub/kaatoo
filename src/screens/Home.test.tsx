@@ -6,11 +6,11 @@ import { renderWithStore, saved, seedProfile } from '../test/helpers';
 
 /** stands in for a game finishing a round while the home screen is up */
 function FinishARound() {
-  const { recordWin, recordOutcome } = useStore();
+  const { recordWin, recordRound, skillOf } = useStore();
   return (
     <button
       onClick={() => {
-        recordOutcome('odd', true);
+        recordRound('odd', true, skillOf('odd'));
         recordWin('odd');
       }}
     >

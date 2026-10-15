@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Art, type ArtId } from '../art';
 import { COLORS, SHAPES } from '../data/content';
+import { topLevel } from '../data/levels';
 import { chimeGood, speak, speakSeq } from '../lib/speech';
+import type { Ladder } from '../lib/skill';
 import { EndCard, GameShell } from '../components/chrome';
 import { pick, shuffle } from '../lib/util';
 import { useFlash } from '../hooks/useFlash';
-import { useFrozenLevel } from '../hooks/useFrozenLevel';
 import { useInstruction } from '../hooks/useInstruction';
 import { useRounds } from '../hooks/useRounds';
 import { GuideHand } from '../components/hint';
@@ -25,6 +26,12 @@ import { GuideHand } from '../components/hint';
  improves preschoolers' patterning (Fyfe et al. 2015).
 */
 const ROUNDS = 5;
+/** copying is four picks from two (luck: 1 in 16); extending is one pick from three */
+const LADDER: Ladder = {
+  top: topLevel('pattern'),
+  chance: (level) => (level === 0 ? 1 / 16 : 1 / 3),
+  steps: (level) => (level === 0 ? 4 : 1),
+};
 
 interface El {
   art: ArtId;
@@ -69,13 +76,22 @@ function build(level: number): Data {
 }
 
 export default function Pattern({ onHome }: { onHome: () => void }) {
-  const level = useFrozenLevel('pattern', 3);
-  const [data, setData] = useState(() => build(level));
   const [filled, setFilled] = useState<El[]>([]); // copy mode: what she built
   const [spokenIdx, setSpokenIdx] = useState(-1); // which tile the voice is naming right now
-  const { round, done, solved, misses, miss, solve, restart } = useRounds('pattern', ROUNDS, () => {
-    setData(build(level));
-    setFilled([]);
+  const {
+    board: data,
+    round,
+    done,
+    solved,
+    misses,
+    miss,
+    solve,
+    restart,
+  } = useRounds('pattern', {
+    rounds: ROUNDS,
+    ladder: LADDER,
+    deal: build,
+    onDeal: () => setFilled([]),
   });
   const [wrong, flashWrong] = useFlash<string>();
   const layerRef = useRef<HTMLDivElement>(null);
@@ -150,7 +166,9 @@ export default function Pattern({ onHome }: { onHome: () => void }) {
             {data.seq.map((el, i) => (
               <div
                 key={i}
-                className={`shrink-0 rounded-2xl transition-all duration-150 ${spokenIdx === i ? 'scale-125 drop-shadow-[0_0_10px_rgba(255,183,77,0.9)]' : ''}`}
+                // a tint and a lift, not a glow: an animated drop-shadow filter
+                // repaints every frame, and a mid-range phone stutters on it
+                className={`shrink-0 rounded-2xl transition-transform duration-150 ${spokenIdx === i ? 'scale-125 bg-sun/60' : ''}`}
               >
                 <Art id={el.art} fill={el.fill} size={52} />
               </div>

@@ -1,16 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Art } from '../art';
 import { WORDS, type WordCard } from '../data/content';
+import { topLevel } from '../data/levels';
 import { chimeGood, speak } from '../lib/speech';
+import type { Ladder } from '../lib/skill';
 import { EndCard, GameShell } from '../components/chrome';
 import { pick, sample, shuffle } from '../lib/util';
 import { useFlash } from '../hooks/useFlash';
-import { useFrozenLevel } from '../hooks/useFrozenLevel';
 import { useInstruction } from '../hooks/useInstruction';
 import { useRounds } from '../hooks/useRounds';
 import { GuideHand } from '../components/hint';
 
 const ROUNDS = 5;
+/** one shadow to find among three — among four at the top level */
+const LADDER: Ladder = { top: topLevel('shadow'), chance: (level) => (level >= 2 ? 1 / 4 : 1 / 3) };
 
 interface Board {
   target: WordCard;
@@ -28,11 +31,11 @@ function deal(level: number): Board {
 }
 
 export default function Shadow({ onHome }: { onHome: () => void }) {
-  const level = useFrozenLevel('shadow', 2);
-  const [board, setBoard] = useState(() => deal(level));
-  const { round, done, solved, misses, miss, solve, restart } = useRounds('shadow', ROUNDS, () =>
-    setBoard(deal(level)),
-  );
+  const { board, round, done, solved, misses, miss, solve, restart } = useRounds('shadow', {
+    rounds: ROUNDS,
+    ladder: LADDER,
+    deal,
+  });
   const [wrong, flashWrong] = useFlash<string>();
   const layerRef = useRef<HTMLDivElement>(null);
   const optRefs = useRef<Record<string, HTMLButtonElement | null>>({});

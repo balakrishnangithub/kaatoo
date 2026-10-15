@@ -12,6 +12,7 @@ import {
 import type { GameId } from '../data/content';
 import { setMuted } from './speech';
 import { birthDateFor, formatAge, stageFromAge } from './age';
+import { priorSkill, type Skill } from './skill';
 
 // ---------------- types ----------------
 export interface Settings {
@@ -21,18 +22,19 @@ export interface Settings {
   sound: boolean;
   english: boolean; // echo English after Tamil
   guide: boolean; // adaptive guiding hand (fades as she succeeds)
-  stageOverride: number | null; // 0..3, null = derive from age
+  /** where a game she has never played starts: 0..3, null = from her age */
+  stageOverride: number | null;
   onboarded: boolean; // first-run parent setup completed
 }
 
 export interface ActProg {
   plays: number;
   wins: number;
-  /** recent round outcomes, newest last: 1 = clean round (no wrong taps), 0 = struggled.
-   *  This is the skill signal that drives dynamic difficulty — a lightweight,
-   *  conservative mastery estimate (in the spirit of Bayesian knowledge tracing:
-   *  level up only on sustained clean play, level down quickly on struggle). */
+  /** recent round outcomes, newest last: 1 = clean round (no wrong taps), 0 = needed
+   *  tries — what the parents' corner shows as dots */
   outcomes?: number[];
+  /** her estimated ability in this game — what picks the next round's level */
+  skill?: Skill;
 }
 
 interface Persisted {
@@ -44,17 +46,17 @@ interface Persisted {
 export type Phase = 'play' | 'rest';
 
 interface Store extends Persisted {
-  stage: number; // 0=2-3y, 1=3-4y, 2=4-5y, 3=5-6y
+  /** where new games start: 0=2-3y, 1=3-4y, 2=4-5y, 3=5-6y */
+  stage: number;
   ageText: string;
   /** the session's time is up — games finish their round, then offer only rest */
   expired: boolean;
   phase: Phase;
-  levelFor: (gameId: GameId, maxLevel: number) => number;
+  /** her ability estimate for a game — from her own rounds, or her starting point */
+  skillOf: (gameId: GameId) => Skill;
   recordWin: (gameId: GameId) => void;
-  /** call once per round: clean = completed without wrong taps (skill signal) */
-  recordOutcome: (gameId: GameId, clean: boolean) => void;
-  /** recent first-try accuracy 0..1 and how many rounds back it measures */
-  skillFor: (gameId: GameId) => { acc: number | null; n: number };
+  /** call once per finished round: clean = no wrong tries; skill = the updated estimate */
+  recordRound: (gameId: GameId, clean: boolean, skill: Skill) => void;
   updateSettings: (s: Partial<Settings>) => void;
   toggleMilestone: (id: string) => void;
   resetAll: () => void;
@@ -121,6 +123,23 @@ function load(): Persisted {
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
+/**
+ * The estimate for a game that has none yet. A game she has played under the
+ * old rules (age level, nudged ±1 by the last few rounds) starts exactly where
+ * those rules had her — so an update never moves a child's level by itself —
+ * and half-settled, so her next rounds quickly take over.
+ */
+function startingSkill(stage: number, outcomes: number[] = []): Skill {
+  if (!outcomes.length) return priorSkill(stage);
+  const recent5 = outcomes.slice(-5);
+  const recent3 = outcomes.slice(-3);
+  let level = Math.min(stage, 3);
+  if (recent5.length >= 4 && sum(recent5) / recent5.length >= 0.8) level += 1;
+  if (recent3.length >= 3 && sum(recent3) <= 1) level -= 1;
+  level = Math.max(0, Math.min(level, 3, stage + 1));
+  return { ...priorSkill(level), u: 0.5, n: outcomes.length };
+}
+
 const Ctx = createContext<Store | null>(null);
 /* The countdown lives in its own context: it changes every second, and keeping
    it out of the store means a tick re-renders only what draws the clock (the
@@ -165,23 +184,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const expired = timeLeft <= 0;
 
   /**
-   * Dynamic difficulty: age sets the base AND a soft ceiling (a 2-year-old never
-   * sees 5-year-old content no matter how skilled); demonstrated skill then nudges
-   * the level ±1 within that band. Sustained clean rounds (≥4 of last 5) raise the
-   * challenge; mostly-struggled rounds (≤1 of last 3) lower it fast — the zone of
-   * proximal development, estimated live rather than by age alone.
+   * Difficulty follows her, not the calendar: each game's level comes from its
+   * own skill estimate (lib/skill.ts), updated after every round. Age (or the
+   * parent's choice of stage) only says where a game she has never played
+   * begins — there is no age ceiling.
    */
-  const levelFor = useCallback(
-    (gameId: GameId, maxLevel: number) => {
-      const base = Math.min(stage, maxLevel);
-      const cap = Math.min(maxLevel, stage + 1);
-      const outcomes = persisted.progress[gameId]?.outcomes ?? [];
-      let adj = 0;
-      const recent5 = outcomes.slice(-5);
-      if (recent5.length >= 4 && sum(recent5) / recent5.length >= 0.8) adj = 1; // sustained mastery → step up
-      const recent3 = outcomes.slice(-3);
-      if (recent3.length >= 3 && sum(recent3) <= 1) adj = -1; // struggling → step down
-      return Math.max(0, Math.min(cap, base + adj));
+  const skillOf = useCallback(
+    (gameId: GameId) => {
+      const p = persisted.progress[gameId];
+      return p?.skill ?? startingSkill(stage, p?.outcomes);
     },
     [persisted.progress, stage],
   );
@@ -196,22 +207,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const recordOutcome = useCallback((gameId: GameId, clean: boolean) => {
+  const recordRound = useCallback((gameId: GameId, clean: boolean, skill: Skill) => {
     setPersisted((p) => {
       const cur = p.progress[gameId] ?? { plays: 0, wins: 0 };
       const outcomes = [...(cur.outcomes ?? []), clean ? 1 : 0].slice(-8);
-      return { ...p, progress: { ...p.progress, [gameId]: { ...cur, outcomes } } };
+      return { ...p, progress: { ...p.progress, [gameId]: { ...cur, outcomes, skill } } };
     });
   }, []);
-
-  const skillFor = useCallback(
-    (gameId: GameId) => {
-      const recent = (persisted.progress[gameId]?.outcomes ?? []).slice(-5);
-      if (recent.length < 3) return { acc: null, n: recent.length };
-      return { acc: sum(recent) / recent.length, n: recent.length };
-    },
-    [persisted.progress],
-  );
 
   const updateSettings = useCallback((s: Partial<Settings>) => {
     setPersisted((p) => ({ ...p, settings: { ...p.settings, ...s } }));
@@ -243,10 +245,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ageText,
       expired,
       phase,
-      levelFor,
+      skillOf,
       recordWin,
-      recordOutcome,
-      skillFor,
+      recordRound,
       updateSettings,
       toggleMilestone,
       resetAll,
@@ -259,10 +260,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ageText,
       expired,
       phase,
-      levelFor,
+      skillOf,
       recordWin,
-      recordOutcome,
-      skillFor,
+      recordRound,
       updateSettings,
       toggleMilestone,
       resetAll,

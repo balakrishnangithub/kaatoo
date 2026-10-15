@@ -6,6 +6,7 @@ import {
   aboutToLevelUp,
   flush,
   installFakeSpeech,
+  nextLevel,
   renderWithStore,
   saved,
   seedProfile,
@@ -51,7 +52,7 @@ describe('Count', () => {
     const { container } = renderWithStore(<Count onHome={() => {}} />);
     const counted = items(container).length;
     fireEvent.click(await countAll(container));
-    expect(saved().progress.count.outcomes).toEqual([1, 1, 1, 1]); // the level did tip
+    expect(nextLevel('count', 0)).toBe(1); // the level did tip
     await flush(50);
     // …but what she just counted and answered is still on screen
     expect(badges(container)).toBe(counted);
